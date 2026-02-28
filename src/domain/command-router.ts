@@ -1,5 +1,7 @@
 import type { IncomingCommand, OutgoingMessage, GameInfo } from './types.js';
 import type { GameTracker } from './game-tracker.js';
+import type { FantasyTracker } from './fantasy-tracker.js';
+import type { TriviaService } from './trivia-service.js';
 import type { MessageComposer } from './message-composer.js';
 import type { StatsPort } from '../ports/stats.port.js';
 import type { Logger } from '../shared/logger.js';
@@ -14,6 +16,8 @@ interface CommandRouterDeps {
   seasonCode: string;
   competitionCode: string;
   startTime: number;
+  fantasyTracker?: FantasyTracker;
+  triviaService?: TriviaService;
 }
 
 type CommandFn = (cmd: IncomingCommand) => Promise<string>;
@@ -127,11 +131,17 @@ export class CommandRouter {
     });
 
     this.commands.set('fantasy', async () => {
-      return '🏗 Fantasy tracking coming soon! Stay tuned.';
+      if (!this.deps.fantasyTracker) {
+        return '🏗 Fantasy tracking is not configured. Set DUNKEST_BEARER_TOKEN to enable it.';
+      }
+      return this.deps.fantasyTracker.getOverview();
     });
 
     this.commands.set('trivia', async () => {
-      return '🏗 Trivia coming soon! Stay tuned.';
+      if (!this.deps.triviaService) {
+        return '🤷 Trivia not available.';
+      }
+      return this.deps.triviaService.getRandomTrivia();
     });
   }
 }

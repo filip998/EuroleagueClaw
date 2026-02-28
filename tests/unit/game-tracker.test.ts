@@ -169,6 +169,70 @@ describe('GameTracker', () => {
     });
   });
 
+  describe('big run detection', () => {
+    const liveGame: TrackedGame = {
+      id: 'E2025-1',
+      gameCode: 1,
+      seasonCode: 'E2025',
+      homeTeam: 'Real Madrid',
+      awayTeam: 'Olympiacos',
+      status: 'live',
+      lastScoreHome: 0,
+      lastScoreAway: 0,
+      lastQuarter: 1,
+      lastEventId: null,
+      trackedByChatId: 'chat1',
+      createdAt: '',
+      updatedAt: '',
+    };
+
+    it('should emit big_run when a team scores 8+ unanswered points', () => {
+      // Simulate consecutive home scoring: 3 + 3 + 2 = 8 unanswered
+      let game = { ...liveGame, lastScoreHome: 0, lastScoreAway: 0 };
+      tracker.detectEvents(game, { gameCode: 1, homeScore: 3, awayScore: 0, quarter: 1, clock: '9:00', status: 'live' });
+
+      game = { ...game, lastScoreHome: 3, lastScoreAway: 0 };
+      tracker.detectEvents(game, { gameCode: 1, homeScore: 6, awayScore: 0, quarter: 1, clock: '8:00', status: 'live' });
+
+      game = { ...game, lastScoreHome: 6, lastScoreAway: 0 };
+      const evts = tracker.detectEvents(game, { gameCode: 1, homeScore: 8, awayScore: 0, quarter: 1, clock: '7:00', status: 'live' });
+
+      const bigRun = evts.find((e) => e.type === 'big_run');
+      expect(bigRun).toBeDefined();
+      if (bigRun?.type === 'big_run') {
+        expect(bigRun.teamCode).toBe('home');
+        expect(bigRun.run).toBe('8-0');
+      }
+    });
+
+    it('should reset the run when the opponent scores', () => {
+      let game = { ...liveGame, lastScoreHome: 0, lastScoreAway: 0 };
+      tracker.detectEvents(game, { gameCode: 1, homeScore: 5, awayScore: 0, quarter: 1, clock: '9:00', status: 'live' });
+
+      // Opponent scores, resetting the run
+      game = { ...game, lastScoreHome: 5, lastScoreAway: 0 };
+      tracker.detectEvents(game, { gameCode: 1, homeScore: 5, awayScore: 2, quarter: 1, clock: '8:30', status: 'live' });
+
+      // Home continues scoring but not enough for big run
+      game = { ...game, lastScoreHome: 5, lastScoreAway: 2 };
+      const evts = tracker.detectEvents(game, { gameCode: 1, homeScore: 10, awayScore: 2, quarter: 1, clock: '7:00', status: 'live' });
+
+      const bigRun = evts.find((e) => e.type === 'big_run');
+      expect(bigRun).toBeUndefined();
+    });
+
+    it('should not emit big_run for small runs under 8 points', () => {
+      let game = { ...liveGame, lastScoreHome: 10, lastScoreAway: 10 };
+      tracker.detectEvents(game, { gameCode: 1, homeScore: 13, awayScore: 10, quarter: 1, clock: '6:00', status: 'live' });
+
+      game = { ...game, lastScoreHome: 13, lastScoreAway: 10 };
+      const evts = tracker.detectEvents(game, { gameCode: 1, homeScore: 15, awayScore: 10, quarter: 1, clock: '5:00', status: 'live' });
+
+      const bigRun = evts.find((e) => e.type === 'big_run');
+      expect(bigRun).toBeUndefined();
+    });
+  });
+
   describe('startTracking', () => {
     it('should add a game to storage and start polling', async () => {
       const game = await tracker.startTracking('chat1', 123, 'E2025');

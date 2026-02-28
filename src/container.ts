@@ -4,11 +4,15 @@ import type { StatsPort } from './ports/stats.port.js';
 import type { StoragePort } from './ports/storage.port.js';
 import { TelegramAdapter } from './adapters/telegram/telegram.adapter.js';
 import { EuroLeagueAdapter } from './adapters/euroleague/euroleague.adapter.js';
+import { DunkestAdapter } from './adapters/dunkest/dunkest.adapter.js';
 import { InMemoryStorageAdapter } from './adapters/storage/in-memory.adapter.js';
+import { SQLiteAdapter } from './adapters/storage/sqlite.adapter.js';
 import { GameTracker } from './domain/game-tracker.js';
+import { FantasyTracker } from './domain/fantasy-tracker.js';
 import { CommandRouter } from './domain/command-router.js';
 import { MessageComposer } from './domain/message-composer.js';
 import { ThrottleManager } from './domain/throttle-manager.js';
+import { TriviaService } from './domain/trivia-service.js';
 import { createLogger, type Logger } from './shared/logger.js';
 
 export interface AppContainer {
@@ -21,6 +25,7 @@ export interface AppContainer {
   commandRouter: CommandRouter;
   messageComposer: MessageComposer;
   throttle: ThrottleManager;
+  triviaService: TriviaService;
 }
 
 export function createContainer(config: AppConfig): AppContainer {
@@ -38,7 +43,9 @@ export function createContainer(config: AppConfig): AppContainer {
     logger,
   );
 
-  const storage = new InMemoryStorageAdapter();
+  const storage: StoragePort = config.app.nodeEnv === 'test'
+    ? new InMemoryStorageAdapter()
+    : new SQLiteAdapter(config.app.databasePath);
 
   // Domain services
   const messageComposer = new MessageComposer();
@@ -74,6 +81,16 @@ export function createContainer(config: AppConfig): AppContainer {
     },
   );
 
+  // Fantasy (optional — only if bearer token is configured)
+  let fantasyTracker: FantasyTracker | undefined;
+  if (config.dunkest.bearerToken) {
+    const dunkest = new DunkestAdapter(config.dunkest.apiBase, config.dunkest.bearerToken, logger);
+    fantasyTracker = new FantasyTracker(dunkest, logger);
+    logger.info('Fantasy tracking enabled (Dunkest adapter)');
+  }
+
+  const triviaService = new TriviaService(storage, logger);
+
   const commandRouter = new CommandRouter({
     gameTracker,
     messageComposer,
@@ -83,6 +100,8 @@ export function createContainer(config: AppConfig): AppContainer {
     seasonCode: config.euroleague.seasonCode,
     competitionCode: config.euroleague.competitionCode,
     startTime: Date.now(),
+    fantasyTracker,
+    triviaService,
   });
 
   return {
@@ -95,5 +114,6 @@ export function createContainer(config: AppConfig): AppContainer {
     commandRouter,
     messageComposer,
     throttle,
+    triviaService,
   };
 }

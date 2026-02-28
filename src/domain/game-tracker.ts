@@ -3,8 +3,19 @@ import type { StatsPort } from '../ports/stats.port.js';
 import type { StoragePort } from '../ports/storage.port.js';
 import type { Logger } from '../shared/logger.js';
 
+interface RunState {
+  teamCode: string;
+  points: number;
+  opponentPoints: number;
+}
+
 export class GameTracker {
   private pollingTimers = new Map<string, ReturnType<typeof setInterval>>();
+  private runTracker = new Map<string, RunState>();
+
+  get trackedGameCount(): number {
+    return this.pollingTimers.size;
+  }
 
   constructor(
     private readonly stats: StatsPort,
@@ -195,6 +206,27 @@ export class GameTracker {
         points,
         description: `${homeScored ? game.homeTeam : game.awayTeam} scores ${points}`,
       });
+
+      // Big run detection
+      const scoringTeam = homeScored ? 'home' : 'away';
+      const run = this.runTracker.get(game.id);
+      if (!run || run.teamCode !== scoringTeam) {
+        this.runTracker.set(game.id, { teamCode: scoringTeam, points, opponentPoints: 0 });
+      } else {
+        run.points += points;
+        if (run.points >= 8 && run.opponentPoints === 0) {
+          events.push({
+            type: 'big_run',
+            gameCode: game.gameCode,
+            teamCode: scoringTeam,
+            run: `${run.points}-0`,
+            homeScore: liveScore.homeScore,
+            awayScore: liveScore.awayScore,
+            quarter: liveScore.quarter,
+            clock: liveScore.clock,
+          });
+        }
+      }
     }
 
     // Lead change detection

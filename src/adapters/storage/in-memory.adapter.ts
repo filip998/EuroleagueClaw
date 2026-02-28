@@ -9,6 +9,7 @@ export class InMemoryStorageAdapter implements StoragePort {
   private trackedGames = new Map<string, TrackedGame>();
   private subscriptions = new Map<string, ChatSubscription>();
   private sentEvents = new Set<string>(); // "chatId:eventKey"
+  private triviaItems: TriviaQuestion[] = [];
 
   async initialize(): Promise<void> {
     // No-op for in-memory
@@ -100,7 +101,26 @@ export class InMemoryStorageAdapter implements StoragePort {
   // ─── Trivia ─────────────────────────────────────
 
   async getRandomTrivia(): Promise<TriviaQuestion | null> {
-    // Placeholder — will be implemented with real data in Phase 2
-    return null;
+    if (this.triviaItems.length === 0) return null;
+    const idx = Math.floor(Math.random() * this.triviaItems.length);
+    return this.triviaItems[idx]!;
+  }
+
+  async seedTrivia(items: Array<{ question: string; answer: string; category: string }>): Promise<number> {
+    const existing = new Set(this.triviaItems.map((t) => t.question));
+    let count = 0;
+    for (const item of items) {
+      if (!existing.has(item.question)) {
+        this.triviaItems.push({
+          id: this.triviaItems.length + 1,
+          question: item.question,
+          answer: item.answer,
+          category: item.category,
+        });
+        existing.add(item.question);
+        count++;
+      }
+    }
+    return count;
   }
 }

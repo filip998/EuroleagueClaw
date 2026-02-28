@@ -1,14 +1,25 @@
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { loadConfig } from './config.js';
 import { createContainer } from './container.js';
+import { startHealthCheck } from './shared/health.js';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
 
 async function main() {
   const config = loadConfig();
   const container = createContainer(config);
-  const { logger, chat, storage, commandRouter, gameTracker } = container;
+  const { logger, chat, storage, commandRouter, gameTracker, triviaService } = container;
 
   // Initialize storage
   await storage.initialize();
   logger.info('Storage initialized');
+
+  // Seed trivia data
+  const triviaPath = join(__dirname, '..', 'data', 'trivia.json');
+  await triviaService.seedTrivia(triviaPath);
+
 
   // Resume tracking any previously tracked games
   await gameTracker.resumeAll();
@@ -20,6 +31,14 @@ async function main() {
       await chat.sendMessage(response);
     }
   });
+
+  // Start health check endpoint
+  const startTime = Date.now();
+  startHealthCheck(config.app.healthPort, () => ({
+    uptime: Math.floor((Date.now() - startTime) / 1000),
+    trackedGames: gameTracker.trackedGameCount,
+  }));
+  logger.info({ port: config.app.healthPort }, 'Health check endpoint started');
 
   logger.info('🏀 EuroleagueClaw is running!');
 

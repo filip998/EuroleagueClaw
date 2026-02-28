@@ -50,6 +50,7 @@ npm start
 | `LOG_LEVEL` | No | `info` | Log level: debug, info, warn, error |
 | `THROTTLE_WINDOW_SECONDS` | No | `120` | Batch window for non-critical events |
 | `THROTTLE_MAX_MESSAGES_PER_MINUTE` | No | `5` | Max messages per minute per chat |
+| `HEALTH_PORT` | No | `8080` | Port for health check endpoint |
 
 ## Commands
 
@@ -118,6 +119,56 @@ tests/
 ### Privacy Mode
 
 By default, bots only see `/commands` in groups. For this bot, that's sufficient. If you want the bot to see all messages, disable privacy mode in @BotFather → Bot Settings → Group Privacy.
+
+## Docker
+
+### Build and run with Docker
+
+```bash
+# Build the image
+docker build -t euroleague-claw .
+
+# Run the container
+docker run -d \
+  --name euroleague-claw \
+  --env-file .env \
+  -p 8080:8080 \
+  -v euroleague-data:/app/data \
+  euroleague-claw
+```
+
+### Run with Docker Compose
+
+```bash
+# Start the bot
+docker compose up -d
+
+# View logs
+docker compose logs -f bot
+
+# Stop
+docker compose down
+```
+
+### Azure Container Apps
+
+1. Push the image to Azure Container Registry:
+   ```bash
+   az acr build --registry <your-acr> --image euroleague-claw:latest .
+   ```
+2. Create a Container App:
+   ```bash
+   az containerapp create \
+     --name euroleague-claw \
+     --resource-group <rg> \
+     --environment <env> \
+     --image <your-acr>.azurecr.io/euroleague-claw:latest \
+     --target-port 8080 \
+     --env-vars TELEGRAM_BOT_TOKEN=<token> \
+     --min-replicas 1 --max-replicas 1
+   ```
+3. Configure remaining environment variables via the Azure Portal or `az containerapp update --set-env-vars`.
+4. Mount an Azure Files share to `/app/data` for persistent SQLite storage.
 
 ## Development
 

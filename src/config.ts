@@ -19,6 +19,7 @@ const configSchema = z.object({
     logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
     nodeEnv: z.enum(['development', 'production', 'test']).default('development'),
     databasePath: z.string().default('./data/euroleague-claw.db'),
+    healthPort: z.coerce.number().int().min(0).default(8080),
   }),
   throttle: z.object({
     windowSeconds: z.coerce.number().int().min(10).default(120),
@@ -50,6 +51,7 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
       logLevel: env.LOG_LEVEL,
       nodeEnv: env.NODE_ENV,
       databasePath: env.DATABASE_PATH,
+      healthPort: env.HEALTH_PORT,
     },
     throttle: {
       windowSeconds: env.THROTTLE_WINDOW_SECONDS,

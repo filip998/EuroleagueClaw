@@ -27,6 +27,7 @@ export interface StoragePort {
 
   // ─── Trivia ─────────────────────────────────────
   getRandomTrivia(): Promise<TriviaQuestion | null>;
+  seedTrivia(items: Array<{ question: string; answer: string; category: string }>): Promise<number>;
 
   // ─── Lifecycle ──────────────────────────────────
   initialize(): Promise<void>;
