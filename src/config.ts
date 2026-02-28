@@ -9,7 +9,7 @@ const configSchema = z.object({
     seasonCode: z.string().default('E2025'),
     competitionCode: z.string().default('E'),
     pollIntervalMs: z.coerce.number().int().min(5000).default(15000),
-    liveApiBase: z.string().default('https://live.euroleague.net/api'),
+    liveApiBase: z.string().default('https://api-live.euroleague.net'),
   }),
   dunkest: z.object({
     apiBase: z.string().default('https://fantaking-api.dunkest.com/api/v1'),

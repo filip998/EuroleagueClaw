@@ -5,108 +5,124 @@ import { ApiError } from '../../shared/errors.js';
 import { withRetry } from '../../shared/retry.js';
 
 /**
- * EuroLeague Live API adapter.
- * Uses the public (undocumented) endpoints at live.euroleague.net/api/
+ * EuroLeague API adapter.
+ * Uses the public v2 API at api-live.euroleague.net/v2/
  */
 export class EuroLeagueAdapter implements StatsPort {
+  private gamesCache: { data: ELGame[]; fetchedAt: number } | null = null;
+  private readonly cacheTtlMs = 5 * 60 * 1000; // 5 minutes
+
   constructor(
     private readonly baseUrl: string,
     private readonly logger: Logger,
   ) {}
 
-  async getTodaySchedule(seasonCode: string, _competitionCode: string): Promise<GameInfo[]> {
-    const data = await this.fetchJson<ELScoreboard>('Scoreboard');
-    if (!data || !Array.isArray(data.games)) return [];
+  async getTodaySchedule(seasonCode: string, competitionCode: string): Promise<GameInfo[]> {
+    const games = await this.fetchAllGames(seasonCode, competitionCode || 'E');
+    const today = new Date();
+    const todayStr = today.toISOString().slice(0, 10); // YYYY-MM-DD
 
-    return data.games.map((g): GameInfo => ({
-      gameCode: g.gameCode,
-      seasonCode,
-      homeTeam: this.parseTeam(g.homeTeam, g.homeCode, g.homeShortName),
-      awayTeam: this.parseTeam(g.awayTeam, g.awayCode, g.awayShortName),
-      status: this.mapStatus(g.status),
-      startTime: g.startTime ?? g.date ?? '',
-      venue: g.arena,
-    }));
+    const todayGames = games.filter((g) => {
+      const gameDate = (g.utcDate ?? g.date ?? '').slice(0, 10);
+      return gameDate === todayStr;
+    });
+
+    return todayGames.map((g) => this.mapGameInfo(g, seasonCode));
   }
 
   async getLiveScore(gameCode: number, seasonCode: string): Promise<LiveScore> {
-    const data = await this.fetchJson<ELHeader>(
-      `Header?gamecode=${gameCode}&seasoncode=${seasonCode}`,
+    const competitionCode = seasonCode.startsWith('U') ? 'U' : 'E';
+    const data = await this.fetchJson<ELGameDetail>(
+      `v2/competitions/${competitionCode}/seasons/${seasonCode}/games/${gameCode}`,
     );
 
     if (!data) {
-      throw new ApiError('No header data returned', 404, `Header?gamecode=${gameCode}`);
+      throw new ApiError('No game data returned', 404, `games/${gameCode}`);
     }
+
+    const game = 'data' in data ? (data as any).data : data;
+    const partials = game.local?.partials ?? {};
+    const quarter = this.detectQuarter(partials, game.played);
 
     return {
       gameCode,
-      homeScore: data.homeScore ?? data.localScore ?? 0,
-      awayScore: data.awayScore ?? data.roadScore ?? 0,
-      quarter: data.quarter ?? data.period ?? 0,
-      clock: data.clock ?? data.time ?? '',
-      status: this.mapStatus(data.status),
+      homeScore: game.local?.score ?? 0,
+      awayScore: game.road?.score ?? 0,
+      quarter,
+      clock: '', // v2 API doesn't provide live clock
+      status: game.played ? 'finished' : (quarter > 0 ? 'live' : 'scheduled'),
     };
   }
 
   async getPlayByPlay(
-    gameCode: number,
-    seasonCode: string,
-    sinceEventId?: string | null,
+    _gameCode: number,
+    _seasonCode: string,
+    _sinceEventId?: string | null,
   ): Promise<PlayByPlayEvent[]> {
-    const data = await this.fetchJson<ELPlayByPlay>(
-      `PlaybyPlay?gamecode=${gameCode}&seasoncode=${seasonCode}`,
-    );
-
-    if (!data) return [];
-
-    const allEvents: PlayByPlayEvent[] = [];
-    const quarters = [
-      data.firstQuarter,
-      data.secondQuarter,
-      data.thirdQuarter,
-      data.fourthQuarter,
-      data.extraPeriod,
-    ].filter(Boolean);
-
-    for (const [qIndex, quarter] of quarters.entries()) {
-      if (!Array.isArray(quarter)) continue;
-      for (const play of quarter) {
-        allEvents.push({
-          eventId: `${gameCode}-${qIndex + 1}-${play.numberPlay ?? play.NUMBEROFPLAY ?? allEvents.length}`,
-          gameCode,
-          quarter: qIndex + 1,
-          clock: play.markerTime ?? play.MARKERTIME ?? '',
-          teamCode: play.teamCode ?? play.CODETEAM ?? '',
-          playerName: play.playerName ?? play.PLAYER ?? '',
-          eventType: this.mapEventType(play.playType ?? play.PLAYTYPE ?? ''),
-          description: play.comment ?? play.COMMENT ?? play.playInfo ?? play.PLAYINFO ?? '',
-          homeScore: play.homeScore ?? play.POINTS_A ?? 0,
-          awayScore: play.awayScore ?? play.POINTS_B ?? 0,
-        });
-      }
-    }
-
-    // Filter events since the given event ID
-    if (sinceEventId) {
-      const idx = allEvents.findIndex((e) => e.eventId === sinceEventId);
-      if (idx >= 0) return allEvents.slice(idx + 1);
-    }
-
-    return allEvents;
+    // Play-by-play not available in v2 public API
+    // Will be implemented when a suitable endpoint is found
+    return [];
   }
 
   async getScoreboard(): Promise<LiveScore[]> {
-    const data = await this.fetchJson<ELScoreboard>('Scoreboard');
-    if (!data || !Array.isArray(data.games)) return [];
+    // Use the games list and filter to today's games
+    const games = await this.fetchAllGames('E2025', 'E');
+    const today = new Date().toISOString().slice(0, 10);
 
-    return data.games.map((g): LiveScore => ({
+    return games
+      .filter((g) => (g.utcDate ?? g.date ?? '').slice(0, 10) === today)
+      .map((g): LiveScore => ({
+        gameCode: g.gameCode,
+        homeScore: g.local?.score ?? 0,
+        awayScore: g.road?.score ?? 0,
+        quarter: this.detectQuarter(g.local?.partials ?? {}, g.played),
+        clock: '',
+        status: g.played ? 'finished' : 'scheduled',
+      }));
+  }
+
+  private async fetchAllGames(seasonCode: string, competitionCode: string): Promise<ELGame[]> {
+    // Return cached data if fresh enough
+    if (this.gamesCache && Date.now() - this.gamesCache.fetchedAt < this.cacheTtlMs) {
+      return this.gamesCache.data;
+    }
+
+    const data = await this.fetchJson<ELGamesResponse>(
+      `v2/competitions/${competitionCode}/seasons/${seasonCode}/games`,
+    );
+
+    const games = data?.data ?? [];
+    this.gamesCache = { data: games, fetchedAt: Date.now() };
+    return games;
+  }
+
+  private mapGameInfo(g: ELGame, seasonCode: string): GameInfo {
+    return {
       gameCode: g.gameCode,
-      homeScore: g.homeScore ?? 0,
-      awayScore: g.awayScore ?? 0,
-      quarter: g.quarter ?? 0,
-      clock: g.clock ?? '',
-      status: this.mapStatus(g.status),
-    }));
+      seasonCode,
+      homeTeam: {
+        code: g.local?.club?.code ?? '',
+        name: g.local?.club?.name ?? '',
+        shortName: g.local?.club?.abbreviatedName ?? g.local?.club?.name ?? '',
+      },
+      awayTeam: {
+        code: g.road?.club?.code ?? '',
+        name: g.road?.club?.name ?? '',
+        shortName: g.road?.club?.abbreviatedName ?? g.road?.club?.name ?? '',
+      },
+      status: g.played ? 'finished' : 'scheduled',
+      startTime: g.utcDate ?? g.date ?? '',
+      venue: g.arena ?? '',
+    };
+  }
+
+  private detectQuarter(partials: ELPartials, played?: boolean): number {
+    if (played) return 4;
+    if (partials.partials4) return 4;
+    if (partials.partials3) return 3;
+    if (partials.partials2) return 2;
+    if (partials.partials1) return 1;
+    return 0;
   }
 
   private async fetchJson<T>(endpoint: string): Promise<T | null> {
@@ -138,105 +154,44 @@ export class EuroLeagueAdapter implements StatsPort {
       throw new ApiError(`Failed to fetch ${endpoint}`, 0, url, err);
     }
   }
-
-  private parseTeam(name: string, code: string, shortName?: string): TeamInfo {
-    return {
-      code: code ?? '',
-      name: name ?? '',
-      shortName: shortName ?? name ?? '',
-    };
-  }
-
-  private mapStatus(status: string | number | undefined): 'scheduled' | 'live' | 'finished' | 'postponed' {
-    if (!status) return 'scheduled';
-    const s = String(status).toLowerCase();
-    if (s === 'live' || s === '2' || s === 'playing') return 'live';
-    if (s === 'result' || s === '4' || s === 'finished' || s === 'end') return 'finished';
-    if (s === 'postponed' || s === '5') return 'postponed';
-    return 'scheduled';
-  }
-
-  private mapEventType(playType: string): PlayByPlayEventType {
-    const t = playType.toLowerCase();
-    if (t.includes('2fg') && t.includes('in')) return 'two_pointer_made';
-    if (t.includes('2fg') && t.includes('out')) return 'two_pointer_missed';
-    if (t.includes('3fg') && t.includes('in')) return 'three_pointer_made';
-    if (t.includes('3fg') && t.includes('out')) return 'three_pointer_missed';
-    if (t.includes('ft') && t.includes('in')) return 'free_throw_made';
-    if (t.includes('ft') && t.includes('out')) return 'free_throw_missed';
-    if (t.includes('reb') || t.includes('d ') || t.includes('o ')) return 'rebound';
-    if (t.includes('as')) return 'assist';
-    if (t.includes('st')) return 'steal';
-    if (t.includes('block') || t.includes('bl')) return 'block';
-    if (t.includes('to') || t.includes('turnover')) return 'turnover';
-    if (t.includes('foul') || t.includes('cm') || t.includes('rv')) return 'foul';
-    if (t.includes('timeout')) return 'timeout';
-    if (t.includes('sub') || t.includes('in') || t.includes('out')) return 'substitution';
-    if (t.includes('begin') || t.includes('start')) return 'quarter_start';
-    if (t.includes('end')) return 'quarter_end';
-    return 'unknown';
-  }
 }
 
-// ─── EuroLeague API response shapes (loose, since undocumented) ───
+// ─── EuroLeague v2 API response shapes ───
 
-interface ELScoreboard {
-  games: Array<{
-    gameCode: number;
-    homeTeam: string;
-    homeCode: string;
-    homeShortName?: string;
-    homeScore?: number;
-    awayTeam: string;
-    awayCode: string;
-    awayShortName?: string;
-    awayScore?: number;
-    status: string;
-    quarter?: number;
-    clock?: string;
-    startTime?: string;
-    date?: string;
-    arena?: string;
-  }>;
+interface ELClub {
+  code: string;
+  name: string;
+  abbreviatedName?: string;
 }
 
-interface ELHeader {
-  homeScore?: number;
-  awayScore?: number;
-  localScore?: number;
-  roadScore?: number;
-  quarter?: number;
-  period?: number;
-  clock?: string;
-  time?: string;
-  status: string;
+interface ELPartials {
+  partials1?: number;
+  partials2?: number;
+  partials3?: number;
+  partials4?: number;
+  extraPeriods?: Record<string, number>;
 }
 
-interface ELPlay {
-  numberPlay?: number;
-  NUMBEROFPLAY?: number;
-  markerTime?: string;
-  MARKERTIME?: string;
-  teamCode?: string;
-  CODETEAM?: string;
-  playerName?: string;
-  PLAYER?: string;
-  playType?: string;
-  PLAYTYPE?: string;
-  comment?: string;
-  COMMENT?: string;
-  playInfo?: string;
-  PLAYINFO?: string;
-  homeScore?: number;
-  awayScore?: number;
-  POINTS_A?: number;
-  POINTS_B?: number;
+interface ELTeamSide {
+  club: ELClub;
+  score: number;
+  partials: ELPartials;
 }
 
-interface ELPlayByPlay {
-  firstQuarter?: ELPlay[];
-  secondQuarter?: ELPlay[];
-  thirdQuarter?: ELPlay[];
-  fourthQuarter?: ELPlay[];
-  extraPeriod?: ELPlay[];
+interface ELGame {
+  gameCode: number;
+  played: boolean;
+  date: string;
+  utcDate?: string;
+  local: ELTeamSide;
+  road: ELTeamSide;
+  arena?: string;
+  round?: number;
+  roundName?: string;
 }
+
+interface ELGamesResponse {
+  data: ELGame[];
+}
+
+type ELGameDetail = ELGame | { data: ELGame };

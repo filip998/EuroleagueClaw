@@ -56,6 +56,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error('Fatal error:', err);
+  console.error('Fatal error:', err instanceof Error ? err.stack ?? err.message : String(err));
   process.exit(1);
 });

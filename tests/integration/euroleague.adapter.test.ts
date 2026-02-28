@@ -17,7 +17,7 @@ const noopLogger: Logger = {
 const describeIntegration = process.env.CI ? describe.skip : describe;
 
 describeIntegration('EuroLeagueAdapter (integration)', () => {
-  const adapter = new EuroLeagueAdapter('https://live.euroleague.net/api', noopLogger);
+  const adapter = new EuroLeagueAdapter('https://api-live.euroleague.net', noopLogger);
 
   it('should fetch scoreboard or throw ApiError', async () => {
     try {
