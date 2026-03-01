@@ -179,3 +179,40 @@ Implemented the complete fantasy roster tracking pipeline: PBP API → RosterTra
 ### Test Results
 
 All 81 tests passing. Build passes.
+
+---
+
+## Dunkest Fantasy Roster API Verification — Strahinja (2026-03-01)
+
+**Status:** API VERIFIED, IMPLEMENTATION COMPLETE
+
+**Verdict:** Live API endpoint confirmed; response structure stable. Replaced defensive parsing with typed interfaces.
+
+### Verification Results
+
+Tested against real Dunkest API with bearer token:
+
+1. **Endpoint confirmed:** `/fantasy-teams/{id}/matchdays/{matchdayId}/roster`
+2. **Response structure verified:** `{ data: { players: [{ first_name, last_name, team: { abbreviation } }] } }`
+3. **Public matchday endpoint:** `/leagues/10/config` (no auth required)
+
+### Code Improvements
+
+- Replaced all defensive guessing code with strict TypeScript interfaces
+- Proper type guards for response parsing instead of fallback heuristics
+- Improved error handling for malformed responses
+- **Result:** Cleaner, safer, more maintainable code
+
+### Test Results
+
+- **100 tests passing** (all green)
+- No regressions from type refactoring
+- Build successful
+
+### Files Changed
+
+- `src/adapters/dunkest/dunkest.adapter.ts` — Typed interfaces + response parsing
+
+### Key Takeaway
+
+Previous defensive parsing logic was over-engineered. The Dunkest API response format is stable and consistent. Strict TypeScript typing provides better safety and readability than runtime heuristics.
