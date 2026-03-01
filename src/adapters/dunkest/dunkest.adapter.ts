@@ -5,7 +5,7 @@ import { ApiError } from '../../shared/errors.js';
 import { withRetry } from '../../shared/retry.js';
 
 /**
- * Shape of the /leagues/{id}/config response (unverified — only current_matchday.id confirmed).
+ * Verified shape of the /leagues/{id}/config response.
  */
 interface LeagueConfigResponse {
   data?: {
@@ -15,14 +15,30 @@ interface LeagueConfigResponse {
 }
 
 /**
- * Roster API response shape is UNVERIFIED.
- * We try multiple plausible field names defensively.
+ * Verified roster API response shape from /fantasy-teams/{id}/matchdays/{matchdayId}/roster
  */
-type RosterResponse = Record<string, unknown>;
+interface RosterResponse {
+  data?: {
+    players?: RosterPlayer[];
+  };
+}
+
+interface RosterPlayer {
+  id: number;
+  first_name: string;
+  last_name: string;
+  position?: { id: number; name: string };
+  team?: { id: number; name: string; abbreviation: string };
+  quotation?: number;
+  pts?: number;
+  court_position?: number;
+  is_captain?: boolean;
+  jersey?: string;
+}
 
 /**
  * Dunkest/Fantaking API adapter for fantasy league data.
- * Designed defensively — unknown API structure is handled gracefully.
+ * API structure verified with real endpoints and responses.
  */
 export class DunkestAdapter implements FantasyPort {
   constructor(
@@ -140,40 +156,23 @@ export class DunkestAdapter implements FantasyPort {
   }
 
   /**
-   * Parse roster response defensively — response shape is UNVERIFIED.
-   * Tries multiple plausible field names for players, names, and teams.
+   * Parse roster response using verified API structure.
    */
   private parseRosterResponse(data: unknown, teamId: string): FantasyRoster | null {
     if (!data || typeof data !== 'object') return null;
 
-    const obj = data as Record<string, unknown>;
+    const response = data as RosterResponse;
 
-    // Try to extract owner/team name
-    const ownerName = this.extractString(obj,
-      'team_name', 'teamName', 'name', 'owner_name', 'ownerName',
-      'fantasy_team_name', 'fantasyTeamName', 'user_name', 'userName',
-    ) ?? `Team ${teamId}`;
-
-    // Try to find player array in multiple response shapes
-    const playersRaw = this.extractArray(obj,
-      'roster', 'players', 'lineup', 'starters', 'squad',
-    )
-      ?? (obj.data && typeof obj.data === 'object'
-        ? this.extractArray(obj.data as Record<string, unknown>,
-          'roster', 'players', 'lineup', 'starters', 'squad',
-        )
-        : null)
-      ?? (Array.isArray(data) ? data as unknown[] : null);
-
-    if (!playersRaw || playersRaw.length === 0) {
+    if (!response.data?.players || !Array.isArray(response.data.players)) {
       this.logger.warn(
-        { teamId, keys: Object.keys(obj) },
-        'Could not find player array in roster response',
+        { teamId, hasData: !!response.data },
+        'Invalid roster response structure',
       );
       return null;
     }
 
-    const players = playersRaw
+    const ownerName = `Team ${teamId}`;
+    const players = response.data.players
       .map((p) => this.parsePlayer(p))
       .filter((p): p is { playerName: string; teamCode: string } => p !== null);
 
@@ -185,71 +184,17 @@ export class DunkestAdapter implements FantasyPort {
     return { ownerName, players };
   }
 
-  private parsePlayer(raw: unknown): { playerName: string; teamCode: string } | null {
-    if (!raw || typeof raw !== 'object') return null;
-    const p = raw as Record<string, unknown>;
+  private parsePlayer(p: RosterPlayer): { playerName: string; teamCode: string } | null {
+    if (!p) return null;
 
-    // Player might be nested under a "player" key
-    const playerObj = (p.player && typeof p.player === 'object')
-      ? p.player as Record<string, unknown>
-      : p;
+    const playerName = `${p.last_name}, ${p.first_name}`.trim();
+    if (!playerName || playerName === ',') return null;
 
-    const playerName = this.extractString(playerObj,
-      'player_name', 'playerName', 'name', 'full_name', 'fullName',
-      'display_name', 'displayName',
-    )
-      // Try "first_name last_name" composition
-      ?? this.composeName(playerObj);
-
-    if (!playerName) return null;
-
-    const teamCode = this.extractString(playerObj,
-      'team_code', 'teamCode', 'club_code', 'clubCode',
-      'team_abbreviation', 'team_short_name',
-    )
-      // Try nested team object
-      ?? (playerObj.team && typeof playerObj.team === 'object'
-        ? this.extractString(playerObj.team as Record<string, unknown>,
-          'code', 'abbreviation', 'short_name', 'shortName',
-        )
-        : null)
-      ?? (playerObj.club && typeof playerObj.club === 'object'
-        ? this.extractString(playerObj.club as Record<string, unknown>,
-          'code', 'abbreviation', 'short_name', 'shortName',
-        )
-        : null)
-      ?? '';
+    const teamCode = p.team?.abbreviation ?? '';
 
     return { playerName, teamCode };
   }
 
-  /** Extract the first non-empty string from an object by trying multiple keys */
-  private extractString(obj: Record<string, unknown>, ...keys: string[]): string | null {
-    for (const key of keys) {
-      const val = obj[key];
-      if (typeof val === 'string' && val.trim().length > 0) return val.trim();
-    }
-    return null;
-  }
-
-  /** Try composing "last_name, first_name" from separate fields */
-  private composeName(obj: Record<string, unknown>): string | null {
-    const last = this.extractString(obj, 'last_name', 'lastName', 'surname');
-    const first = this.extractString(obj, 'first_name', 'firstName');
-    if (last && first) return `${last}, ${first}`;
-    if (last) return last;
-    return null;
-  }
-
-  /** Extract the first array found from an object by trying multiple keys */
-  private extractArray(obj: Record<string, unknown>, ...keys: string[]): unknown[] | null {
-    for (const key of keys) {
-      if (Array.isArray(obj[key]) && (obj[key] as unknown[]).length > 0) {
-        return obj[key] as unknown[];
-      }
-    }
-    return null;
-  }
 
   /** Fetch JSON from a public endpoint (no auth required) */
   private async fetchJsonPublic<T>(url: string): Promise<T> {

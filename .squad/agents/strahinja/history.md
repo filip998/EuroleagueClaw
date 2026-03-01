@@ -46,3 +46,53 @@ Bogdan evaluated hiring a DevOps engineer and **recommended against it**. Instea
 - **Files:** euroleague.adapter.ts (PBP), types.ts (roster types), roster-tracker.ts (new service), game-tracker.ts (PBP polling), message-composer.ts (formatting), command-router.ts (/roster), container.ts (wiring), rosters.json (sample data).
 - **Test coverage:** All 81 tests green. No existing tests modified.
 
+
+### EuroLeague Fantasy (Dunkest/Fantaking) API Research (2026-03-05)
+
+**Task:** Investigate the EuroLeague Fantasy API to find a roster/team endpoint.
+
+**Platform Architecture:**
+- EuroLeague Fantasy is a **Flutter web app** (compiled Dart) by Fantaking/Dunkest
+- Frontend: `euroleaguefantasy.euroleaguebasketball.net` (serves Flutter SPA — all routes return same HTML)
+- API backend: `fantaking-api.dunkest.com/api/v1` (same as our existing `DUNKEST_API_BASE` config)
+- Stats scraping: `www.dunkest.com/api/stats/table` (separate, no auth needed)
+
+**Key IDs discovered:**
+- Game ID: 7 (EuroLeague Fantasy Challenge — covers EuroLeague league_id=10 and EuroCup league_id=11)
+- League ID: 10 (EuroLeague)
+- Current competition/schedule/players_list ID: 30
+- Current matchday: id=992, number=30
+- Filip's fantasy team ID from URL: 1562600
+
+**THE ROSTER ENDPOINT:**
+- `GET /api/v1/fantasy-teams/{teamId}/matchdays/{matchdayId}/roster` — requires Bearer token
+- `PUT` variant exists for updating rosters
+- Matchday ID obtainable dynamically from public `/leagues/10/config`
+
+**Other authenticated endpoints:**
+- `/user/fantasy-teams` — current user's teams
+- `/users/{userId}/fantasy-teams/overview` — user overview
+- `/fantasy-leagues/{leagueId}/rosters` — all rosters in a private league (batch!)
+- `/fantasy-leagues/{leagueId}/fantasy-teams` — all teams in a league
+- `/players-lists/{listId}/matchdays/{matchdayId}/players` — available players
+
+**Public endpoints (no auth):**
+- `/leagues/{leagueId}/config` — league config, teams, matchdays, formations
+- `/leagues/{leagueId}/fantasy-leaders` — fantasy point leaders
+- `/schedules/{scheduleId}/matchdays/{matchdayId}` — match schedule
+
+**Auth:** Social login via `POST /social/login` (provider_id, provider_name, provider_token, email, game_id). Returns bearer token.
+
+**Roster composition (Classic):** 11 players (5 starters, 5 bench, 1 coach). 4G/4F/2C/1HC. Captain 2x.
+
+**Blocker:** Need Filip's bearer token and team IDs to proceed with implementation.
+
+### API Roster Fetching Implementation (2025-07-18)
+- **Status:** COMPLETE. 6 files modified, 100 tests passing, build passes.
+- **Config:** Added `DUNKEST_FANTASY_TEAM_IDS` env var (comma-separated) → `config.dunkest.fantasyTeamIds` array.
+- **FantasyPort:** Added `getRosters(teamIds: string[]): Promise<FantasyRoster[]>` method.
+- **DunkestAdapter.getRosters():** Fetches current matchday from public `/leagues/10/config`, then per-team roster from `/fantasy-teams/{id}/matchdays/{matchdayId}/roster`. Fully defensive parsing — tries multiple response shapes since API format is unverified. Has `fetchJsonPublic` (no auth) and existing `fetchJson` (bearer auth).
+- **RosterTracker:** Added `loadRosters(rosters)` method for API-sourced data. Made `normalizeName` public static. Extracted `buildIndex()` to share between file and API loading paths.
+- **Container wiring:** Async `createContainer`. Prefers API when bearerToken + fantasyTeamIds configured, falls back to `data/rosters.json` on failure or empty response.
+- **Key files:** config.ts, fantasy.port.ts, dunkest.adapter.ts, roster-tracker.ts, container.ts, index.ts
+- **No breaking changes:** All existing tests pass unchanged (only mock update for new port method).
