@@ -203,7 +203,7 @@ export class CommandRouter {
       const titleLC = tv.title.toLowerCase();
       const matchesHome = titleLC.includes(homeLC) || titleLC.includes(homeName) || titleLC.includes(homeCode);
       const matchesAway = titleLC.includes(awayLC) || titleLC.includes(awayName) || titleLC.includes(awayCode);
-      return matchesHome || matchesAway;
+      return matchesHome && matchesAway;
     });
   }
 }

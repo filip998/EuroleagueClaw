@@ -10,6 +10,8 @@ const CHANNEL_SHORT_MAP: Record<string, string> = {
   'arena premium 1': 'ASP1',
   'arena premium 2': 'ASP2',
   'arena premium 3': 'ASP3',
+  'arena premium 4': 'ASP4',
+  'arena premium 5': 'ASP5',
   'arena sport 1': 'AS1',
   'arena sport 2': 'AS2',
   'arena sport 3': 'AS3',
@@ -61,7 +63,7 @@ export class ArenaSportAdapter implements TvSchedulePort {
     try {
       const html = await this.fetchPage();
       const entries = this.parseSchedule(html);
-      const euroEntries = entries.filter((e) => this.isEuroLeague(e));
+      const euroEntries = entries.filter((e) => this.isEuroLeague(e) && e.isLive);
       this.cache = { data: euroEntries, fetchedAt: Date.now() };
       this.logger.info({ count: euroEntries.length }, 'Arena Sport TV schedule loaded');
       return euroEntries;
