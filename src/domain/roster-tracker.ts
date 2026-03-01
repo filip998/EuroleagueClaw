@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { FantasyRoster, PlayByPlayEvent, PlayByPlayEventType, RosteredPlayer, RosterRound } from './types.js';
-import { escapeMarkdownV2, bold, codeBlock } from '../shared/markdown-v2.js';
+import { escapeMarkdownV2, bold, italic, SEPARATOR } from '../shared/markdown-v2.js';
 
 const NOTABLE_EVENT_TYPES: ReadonlySet<PlayByPlayEventType> = new Set([
   'two_pointer_made',
@@ -56,11 +56,11 @@ export class RosterTracker {
       return escapeMarkdownV2('📋 No fantasy rosters loaded.');
     }
 
-    const e = escapeMarkdownV2;
-    const parts = [`🏀 ${bold('Fantasy Rosters')} — ${e('Matchday ' + this.roundNumber)}\n`];
+    const parts = [`🏀 ${bold('Fantasy Rosters')} — ${escapeMarkdownV2('Matchday ' + this.roundNumber)}\n${SEPARATOR}\n`];
 
-    for (const roster of this.rosterData) {
-      parts.push(`👤 ${bold(roster.ownerName)}`);
+    for (let ri = 0; ri < this.rosterData.length; ri++) {
+      const roster = this.rosterData[ri];
+      parts.push(`👤 ${bold(roster.ownerName)}\n`);
 
       const hasPositionData = roster.players.some(p => p.courtPosition != null);
 
@@ -72,32 +72,30 @@ export class RosterTracker {
         const bench = sorted.filter(p => p.courtPosition != null && p.courtPosition >= 6 && p.courtPosition <= 10);
         const coach = sorted.filter(p => p.courtPosition != null && p.courtPosition >= 11);
 
-        const lines: string[] = [];
+        const sections: Array<{ emoji: string; label: string; players: RosteredPlayer[] }> = [];
+        if (starters.length > 0) sections.push({ emoji: '🏟', label: 'Starting Five', players: starters });
+        if (bench.length > 0) sections.push({ emoji: '📋', label: 'Bench', players: bench });
+        if (coach.length > 0) sections.push({ emoji: '🎩', label: 'Coach', players: coach });
 
-        if (starters.length > 0) {
-          lines.push('── Starting Five ──');
-          for (const p of starters) lines.push(this.formatPlayerCodeBlock(p));
+        for (let si = 0; si < sections.length; si++) {
+          const section = sections[si];
+          parts.push(`${section.emoji} ${italic(section.label)}`);
+          for (let pi = 0; pi < section.players.length; pi++) {
+            const prefix = pi === section.players.length - 1 ? '└' : '├';
+            parts.push(`  ${prefix} ${this.formatPlayerLineMd(section.players[pi])}`);
+          }
+          if (si < sections.length - 1) parts.push('');
         }
-
-        if (bench.length > 0) {
-          lines.push('── Bench ──');
-          for (const p of bench) lines.push(this.formatPlayerCodeBlock(p));
-        }
-
-        if (coach.length > 0) {
-          lines.push('── Coach ──');
-          for (const p of coach) lines.push(this.formatPlayerCodeBlock(p));
-        }
-
-        parts.push(codeBlock(lines.join('\n')));
       } else {
-        const lines = roster.players.map(
-          (p) => `${this.formatDisplayName(p.playerName).padEnd(14)} ${p.teamCode}`,
-        );
-        parts.push(codeBlock(lines.join('\n')));
+        for (let pi = 0; pi < roster.players.length; pi++) {
+          const prefix = pi === roster.players.length - 1 ? '└' : '├';
+          parts.push(`  ${prefix} ${this.formatPlayerLineMd(roster.players[pi])}`);
+        }
       }
 
-      parts.push('');
+      if (ri < this.rosterData.length - 1) {
+        parts.push(`\n${SEPARATOR}\n`);
+      }
     }
 
     return parts.join('\n').trimEnd();
@@ -138,7 +136,7 @@ export class RosterTracker {
 
   private formatPlayerLineMd(p: RosteredPlayer): string {
     const e = escapeMarkdownV2;
-    const pos = p.position ? `${e(this.positionTag(p.position))} ` : '';
+    const pos = p.position ? `${e(this.positionTag(p.position).trim())} · ` : '';
     const name = bold(this.formatDisplayName(p.playerName));
     const matchup = p.opponentCode ? ` vs ${p.opponentCode}` : '';
     const captain = p.isCaptain ? ' ©' : '';

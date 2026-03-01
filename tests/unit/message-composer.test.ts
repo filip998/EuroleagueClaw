@@ -137,20 +137,21 @@ describe('MessageComposer', () => {
     it('should return MarkdownV2 formatted output with bold title', () => {
       const msg = composer.composeHelp();
       expect(msg).toContain('*EuroleagueClaw*');
-      // Commands are now inside a code block
-      expect(msg).toContain('```');
+      // Commands use bold formatting, no code blocks
+      expect(msg).not.toContain('```');
       expect(msg).toContain('/help');
       expect(msg).toContain('/games');
       expect(msg).toContain('/roster');
       expect(msg).toContain('/fantasy');
     });
 
-    it('should contain commands in code block without MarkdownV2 escaping', () => {
+    it('should contain commands with bold names and escaped descriptions', () => {
       const msg = composer.composeHelp();
-      // em dash — inside code block stays as-is
+      // em dash — is not a MarkdownV2 special char, passes through
       expect(msg).toContain('—');
-      // <n> inside code block is not escaped
-      expect(msg).toContain('<n>');
+      // Bold command names
+      expect(msg).toContain('*/help*');
+      expect(msg).toContain('*/games*');
     });
   });
 

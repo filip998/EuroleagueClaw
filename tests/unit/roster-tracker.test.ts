@@ -165,9 +165,9 @@ describe('RosterTracker', () => {
       expect(overview).toContain('Matchday 15');
       expect(overview).toContain('Filip');
       expect(overview).toContain('Marko');
-      // Player names displayed as formatted names inside code block
-      expect(overview).toContain('F. Campazzo');
-      expect(overview).toContain('S. Vezenkov');
+      // Player names displayed as formatted names with MarkdownV2 escaping
+      expect(overview).toContain('Campazzo');
+      expect(overview).toContain('Vezenkov');
     });
 
     it('should return "no rosters loaded" when not loaded', () => {
@@ -247,12 +247,14 @@ describe('RosterTracker', () => {
       // Without court positions, there should be no Starting Five / Bench sections
       expect(overview).not.toContain('Starting Five');
       expect(overview).not.toContain('Bench');
-      // Player names as formatted display names inside code block
-      expect(overview).toContain('F. Campazzo');
-      expect(overview).toContain('W. Tavares');
+      // Player names with MarkdownV2 bold formatting and tree chars
+      expect(overview).toContain('Campazzo');
+      expect(overview).toContain('Tavares');
+      expect(overview).toContain('├');
+      expect(overview).toContain('└');
     });
 
-    it('should render player data inside code blocks', () => {
+    it('should render player data with MarkdownV2 formatting', () => {
       tracker.loadRosters([{
         ownerName: 'Filip',
         players: [
@@ -262,15 +264,15 @@ describe('RosterTracker', () => {
       }], 10);
 
       const overview = tracker.getOverview();
-      const codeBlockMatch = overview.match(/```\n([\s\S]*?)\n```/);
-      expect(codeBlockMatch).not.toBeNull();
-      const inside = codeBlockMatch![1];
-      expect(inside).toContain('F. Campazzo');
-      expect(inside).toContain('W. Tavares');
-      expect(inside).toContain('MAD');
+      // No code blocks — uses MarkdownV2 inline formatting
+      expect(overview).not.toContain('```');
+      // Bold player names with escaped dots
+      expect(overview).toContain('*F\\. Campazzo*');
+      expect(overview).toContain('*W\\. Tavares*');
+      expect(overview).toContain('\\(MAD\\)');
     });
 
-    it('should render roster owner header outside code blocks', () => {
+    it('should render roster owner header with bold formatting', () => {
       tracker.loadRosters([{
         ownerName: 'Filip',
         players: [
@@ -279,16 +281,15 @@ describe('RosterTracker', () => {
       }], 10);
 
       const overview = tracker.getOverview();
-      // Split by code block markers
-      const parts = overview.split('```');
-      const outsideText = parts.filter((_, i) => i % 2 === 0).join('');
-      // Bold owner name and Fantasy Rosters header are outside code blocks
-      expect(outsideText).toContain('*Filip*');
-      expect(outsideText).toContain('*Fantasy Rosters*');
-      expect(outsideText).toContain('👤');
+      // No code blocks anywhere
+      expect(overview).not.toContain('```');
+      // Bold owner name and Fantasy Rosters header
+      expect(overview).toContain('*Filip*');
+      expect(overview).toContain('*Fantasy Rosters*');
+      expect(overview).toContain('👤');
     });
 
-    it('should render position sections inside code blocks when court positions present', () => {
+    it('should render position sections with italic headers when court positions present', () => {
       tracker.loadRosters([{
         ownerName: 'Filip',
         players: [
@@ -298,14 +299,16 @@ describe('RosterTracker', () => {
       }], 20);
 
       const overview = tracker.getOverview();
-      const codeBlockMatch = overview.match(/```\n([\s\S]*?)\n```/);
-      expect(codeBlockMatch).not.toBeNull();
-      const inside = codeBlockMatch![1];
-      // Section headers and players are all inside the code block
-      expect(inside).toContain('Starting Five');
-      expect(inside).toContain('Bench');
-      expect(inside).toContain('F. Campazzo');
-      expect(inside).toContain('V. Poirier');
+      // No code blocks
+      expect(overview).not.toContain('```');
+      // Italic section headers
+      expect(overview).toContain('_Starting Five_');
+      expect(overview).toContain('_Bench_');
+      // Tree characters and position tags with dot separator
+      expect(overview).toContain('└');
+      expect(overview).toContain('G · ');
+      expect(overview).toContain('Campazzo');
+      expect(overview).toContain('Poirier');
     });
   });
 

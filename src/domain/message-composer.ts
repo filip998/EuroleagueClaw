@@ -1,5 +1,5 @@
 import type { GameEvent, TrackedGame, PlayByPlayEvent, RoundSchedule, RoundGame } from './types.js';
-import { escapeMarkdownV2, bold, codeBlock } from '../shared/markdown-v2.js';
+import { escapeMarkdownV2, bold, SEPARATOR } from '../shared/markdown-v2.js';
 
 export class MessageComposer {
   private teamNames = new Map<string, { home: string; away: string }>();
@@ -55,13 +55,13 @@ export class MessageComposer {
   composeRoundGames(schedule: RoundSchedule): string {
     if (schedule.games.length === 0) return escapeMarkdownV2('📅 No games found for the current round.');
 
-    const header = `🏀 ${bold(schedule.roundName)}`;
+    const header = `🏀 ${bold(schedule.roundName)}\n${SEPARATOR}`;
     const gamesByDate = this.groupGamesByDate(schedule.games);
 
     const sections: string[] = [];
     for (const [dateLabel, games] of gamesByDate) {
       const lines = games.map((g) => this.formatGameLine(g));
-      sections.push(`📆 ${escapeMarkdownV2(dateLabel)}\n${lines.join('\n')}`);
+      sections.push(`📆 ${bold(dateLabel)}\n\n${lines.join('\n')}`);
     }
 
     return `${header}\n\n${sections.join('\n\n')}`;
@@ -114,7 +114,7 @@ export class MessageComposer {
       hour12: false,
     }).format(new Date(game.startTime));
 
-    return `⏳ ${bold(game.homeTeam.shortName)} vs ${bold(game.awayTeam.shortName)} 🕐 ${escapeMarkdownV2(time)}`;
+    return `⏳ ${bold(game.homeTeam.shortName)} vs ${bold(game.awayTeam.shortName)}\n      🕐 ${escapeMarkdownV2(time)}`;
   }
 
   /** Format a game line for use inside a code block (no MarkdownV2 escaping). */
@@ -161,21 +161,22 @@ export class MessageComposer {
   }
 
   composeHelp(): string {
+    const e = escapeMarkdownV2;
     const commands = [
-      '/help      — Show this message',
-      "/today     — Today's schedule",
-      '/game <n>  — Track a game',
-      '/stop <n>  — Stop tracking',
-      '/games     — Round schedule',
-      '/fantasy   — Fantasy overview',
-      '/roster    — Roster overview',
-      '/mute <m>  — Silence updates',
-      '/unmute    — Resume updates',
-      '/trivia    — Random trivia',
-      '/status    — Bot status',
+      `▸ ${bold('/help')} ${e('— Show this message')}`,
+      `▸ ${bold('/today')} ${e("— Today's schedule")}`,
+      `▸ ${bold('/game <n>')} ${e('— Track a game')}`,
+      `▸ ${bold('/stop <n>')} ${e('— Stop tracking')}`,
+      `▸ ${bold('/games')} ${e('— Round schedule')}`,
+      `▸ ${bold('/fantasy')} ${e('— Fantasy overview')}`,
+      `▸ ${bold('/roster')} ${e('— Roster overview')}`,
+      `▸ ${bold('/mute <m>')} ${e('— Silence updates')}`,
+      `▸ ${bold('/unmute')} ${e('— Resume updates')}`,
+      `▸ ${bold('/trivia')} ${e('— Random trivia')}`,
+      `▸ ${bold('/status')} ${e('— Bot status')}`,
     ];
 
-    return `🏀 ${bold('EuroleagueClaw')}\n${codeBlock(commands.join('\n'))}`;
+    return `🏀 ${bold('EuroleagueClaw')}\n${SEPARATOR}\n\n${commands.join('\n')}`;
   }
 
   composeStatus(trackedCount: number, uptime: number): string {

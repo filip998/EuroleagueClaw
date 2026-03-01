@@ -35,3 +35,6 @@ export function codeBlock(text: string): string {
   const escaped = text.replace(/[`\\]/g, '\\$&');
   return `\`\`\`\n${escaped}\n\`\`\``;
 }
+
+/** Thick separator line for card headers. Unicode ━ needs no escaping. */
+export const SEPARATOR = '━━━━━━━━━━━━━━━━━━';
