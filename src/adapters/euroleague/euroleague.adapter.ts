@@ -183,13 +183,13 @@ export class EuroLeagueAdapter implements StatsPort {
   async getCurrentRoundGames(seasonCode: string, competitionCode: string): Promise<RoundSchedule> {
     const comp = competitionCode || 'E';
     const rounds = await this.fetchRounds(seasonCode, comp);
-    const currentRound = this.findCurrentRound(rounds);
+    const allGames = await this.fetchAllGames(seasonCode, comp);
+    const currentRound = this.findCurrentRound(rounds, allGames);
 
     if (!currentRound) {
       return { roundNumber: 0, roundName: 'Unknown', games: [] };
     }
 
-    const allGames = await this.fetchAllGames(seasonCode, comp);
     const roundGames = allGames
       .filter((g) => g.round === currentRound.round)
       .sort((a, b) => (a.utcDate ?? a.date ?? '').localeCompare(b.utcDate ?? b.date ?? ''));
@@ -224,9 +224,11 @@ export class EuroLeagueAdapter implements StatsPort {
     return data?.data ?? [];
   }
 
-  private findCurrentRound(rounds: ELRound[]): ELRound | undefined {
+  private findCurrentRound(rounds: ELRound[], allGames: ELGame[]): ELRound | undefined {
     if (rounds.length === 0) return undefined;
     const now = new Date();
+    const todayStr = now.toISOString().slice(0, 10);
+    const sorted = [...rounds].sort((a, b) => a.round - b.round);
 
     // Find a round whose date range contains today
     const active = rounds.find((r) => {
@@ -234,20 +236,29 @@ export class EuroLeagueAdapter implements StatsPort {
       const end = new Date(r.maxGameStartDate);
       return now >= start && now <= end;
     });
-    if (active) return active;
 
-    // Between rounds: pick the nearest one (next upcoming or most recent past)
-    const sorted = [...rounds].sort((a, b) => a.round - b.round);
-    const nextUpcoming = sorted.find((r) => new Date(r.minGameStartDate) > now);
-    const mostRecentPast = sorted.reverse().find((r) => new Date(r.maxGameStartDate) < now);
-
-    if (nextUpcoming && mostRecentPast) {
-      const daysToNext = (new Date(nextUpcoming.minGameStartDate).getTime() - now.getTime()) / 86400000;
-      const daysSinceLast = (now.getTime() - new Date(mostRecentPast.maxGameStartDate).getTime()) / 86400000;
-      return daysToNext < daysSinceLast ? nextUpcoming : mostRecentPast;
+    // Pick a candidate: active round, or most recent past round, or next upcoming
+    let candidate = active;
+    if (!candidate) {
+      const mostRecentPast = [...sorted].reverse().find((r) => new Date(r.maxGameStartDate) < now);
+      const nextUpcoming = sorted.find((r) => new Date(r.minGameStartDate) > now);
+      candidate = mostRecentPast ?? nextUpcoming ?? sorted[0];
     }
 
-    return nextUpcoming ?? mostRecentPast ?? sorted[0];
+    if (!candidate) return undefined;
+
+    // If ALL games in the candidate round are finished and the last game day
+    // was before today, advance to the next upcoming round (show the schedule).
+    const candidateGames = allGames.filter((g) => g.round === candidate!.round);
+    const allPlayed = candidateGames.length > 0 && candidateGames.every((g) => g.played);
+    const maxDate = candidate.maxGameStartDate.slice(0, 10);
+
+    if (allPlayed && maxDate < todayStr) {
+      const nextRound = sorted.find((r) => r.round > candidate!.round);
+      if (nextRound) return nextRound;
+    }
+
+    return candidate;
   }
 
   private async fetchAllGames(seasonCode: string, competitionCode: string): Promise<ELGame[]> {
