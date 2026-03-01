@@ -29,7 +29,7 @@ export interface AppContainer {
   triviaService: TriviaService;
 }
 
-export function createContainer(config: AppConfig): AppContainer {
+export async function createContainer(config: AppConfig): Promise<AppContainer> {
   const logger = createLogger(config.app.logLevel);
 
   // Adapters
@@ -59,15 +59,28 @@ export function createContainer(config: AppConfig): AppContainer {
     logger,
   );
 
-  // Roster tracker (optional — loads from data/rosters.json)
+  // Roster tracker — prefer API, fall back to file
   const rosterTracker = new RosterTracker();
-  try {
+  if (config.dunkest.bearerToken && config.dunkest.fantasyTeamIds.length > 0) {
+    const dunkestForRosters = new DunkestAdapter(config.dunkest.apiBase, config.dunkest.bearerToken, logger);
+    try {
+      const apiRosters = await dunkestForRosters.getRosters(config.dunkest.fantasyTeamIds);
+      if (apiRosters.length > 0) {
+        rosterTracker.loadRosters(apiRosters);
+        logger.info({ teamCount: apiRosters.length }, 'Fantasy rosters loaded from Dunkest API');
+      } else {
+        rosterTracker.loadFromFile('./data/rosters.json');
+        logger.info('API returned no rosters, loaded from file fallback');
+      }
+    } catch (err) {
+      logger.warn({ error: String(err) }, 'Dunkest API roster fetch failed, falling back to file');
+      rosterTracker.loadFromFile('./data/rosters.json');
+    }
+  } else {
     rosterTracker.loadFromFile('./data/rosters.json');
     if (rosterTracker.isLoaded()) {
-      logger.info('Fantasy roster tracking enabled');
+      logger.info('Fantasy rosters loaded from file');
     }
-  } catch {
-    logger.warn('Could not load rosters from data/rosters.json');
   }
 
   const gameTracker = new GameTracker(

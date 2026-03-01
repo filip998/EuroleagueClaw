@@ -13,6 +13,7 @@ function createMockFantasy(standings: FantasyStandings): FantasyPort {
   return {
     getStandings: vi.fn().mockResolvedValue(standings),
     getCurrentRound: vi.fn().mockResolvedValue({ roundNumber: 1, roundName: 'Round 1', isActive: true }),
+    getRosters: vi.fn().mockResolvedValue([]),
   };
 }
 

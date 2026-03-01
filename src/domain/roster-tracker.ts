@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import type { PlayByPlayEvent, PlayByPlayEventType, RosterRound } from './types.js';
+import type { FantasyRoster, PlayByPlayEvent, PlayByPlayEventType, RosterRound } from './types.js';
 
 const NOTABLE_EVENT_TYPES: ReadonlySet<PlayByPlayEventType> = new Set([
   'two_pointer_made',
@@ -15,6 +15,10 @@ export class RosterTracker {
   private roundNumber = 0;
   private loaded = false;
 
+  static normalizeName(name: string): string {
+    return name.trim().toLowerCase();
+  }
+
   loadFromFile(path: string): void {
     try {
       const raw = readFileSync(path, 'utf-8');
@@ -24,22 +28,14 @@ export class RosterTracker {
         throw new Error('Invalid rosters.json: missing rosters array');
       }
 
-      this.playerIndex.clear();
-      this.roundNumber = data.roundNumber ?? 0;
-
-      for (const roster of data.rosters) {
-        for (const player of roster.players) {
-          const key = this.normalizeName(player.playerName);
-          const owners = this.playerIndex.get(key) ?? [];
-          owners.push(roster.ownerName);
-          this.playerIndex.set(key, owners);
-        }
-      }
-
-      this.loaded = true;
+      this.buildIndex(data.rosters, data.roundNumber ?? 0);
     } catch {
       this.loaded = false;
     }
+  }
+
+  loadRosters(rosters: FantasyRoster[]): void {
+    this.buildIndex(rosters, 0);
   }
 
   matchEvent(event: PlayByPlayEvent): string[] {
@@ -47,7 +43,7 @@ export class RosterTracker {
     if (!NOTABLE_EVENT_TYPES.has(event.eventType)) return [];
     if (!event.playerName) return [];
 
-    const key = this.normalizeName(event.playerName);
+    const key = RosterTracker.normalizeName(event.playerName);
     return this.playerIndex.get(key) ?? [];
   }
 
@@ -81,7 +77,19 @@ export class RosterTracker {
     return this.loaded;
   }
 
-  private normalizeName(name: string): string {
-    return name.trim().toLowerCase();
+  private buildIndex(rosters: FantasyRoster[], roundNumber: number): void {
+    this.playerIndex.clear();
+    this.roundNumber = roundNumber;
+
+    for (const roster of rosters) {
+      for (const player of roster.players) {
+        const key = RosterTracker.normalizeName(player.playerName);
+        const owners = this.playerIndex.get(key) ?? [];
+        owners.push(roster.ownerName);
+        this.playerIndex.set(key, owners);
+      }
+    }
+
+    this.loaded = rosters.length > 0;
   }
 }

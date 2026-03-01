@@ -14,6 +14,7 @@ const configSchema = z.object({
   dunkest: z.object({
     apiBase: z.string().default('https://fantaking-api.dunkest.com/api/v1'),
     bearerToken: z.string().default(''),
+    fantasyTeamIds: z.array(z.string()).default([]),
   }),
   app: z.object({
     logLevel: z.enum(['debug', 'info', 'warn', 'error']).default('info'),
@@ -46,6 +47,9 @@ export function loadConfig(env: Record<string, string | undefined> = process.env
     dunkest: {
       apiBase: env.DUNKEST_API_BASE,
       bearerToken: env.DUNKEST_BEARER_TOKEN,
+      fantasyTeamIds: env.DUNKEST_FANTASY_TEAM_IDS
+        ? env.DUNKEST_FANTASY_TEAM_IDS.split(',').map((s) => s.trim()).filter(Boolean)
+        : [],
     },
     app: {
       logLevel: env.LOG_LEVEL,

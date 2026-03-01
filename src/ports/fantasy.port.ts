@@ -1,4 +1,4 @@
-import type { FantasyStandings } from '../domain/types.js';
+import type { FantasyRoster, FantasyStandings } from '../domain/types.js';
 
 /**
  * Port for fetching fantasy league data.
@@ -10,4 +10,7 @@ export interface FantasyPort {
 
   /** Check if a new round has started since last check */
   getCurrentRound(): Promise<{ roundNumber: number; roundName: string; isActive: boolean }>;
+
+  /** Fetch fantasy rosters for the given team IDs for the current matchday */
+  getRosters(teamIds: string[]): Promise<FantasyRoster[]>;
 }

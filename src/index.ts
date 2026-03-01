@@ -9,7 +9,7 @@ const __dirname = dirname(__filename);
 
 async function main() {
   const config = loadConfig();
-  const container = createContainer(config);
+  const container = await createContainer(config);
   const { logger, chat, storage, commandRouter, gameTracker, triviaService } = container;
 
   // Initialize storage
