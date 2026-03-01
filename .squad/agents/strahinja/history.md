@@ -134,3 +134,13 @@ Bogdan evaluated hiring a DevOps engineer and **recommended against it**. Instea
 - `tests/unit/roster-tracker.test.ts` + `tests/unit/fantasy-tracker.test.ts` — Updated assertions
 
 **Test Results:** 100 tests passing, build clean.
+
+### /games Command — Round Schedule & Results (2026-07-18)
+- **Task:** Repurpose `/games` from showing tracked games to showing all games from the current EuroLeague round.
+- **API Discovery:** EuroLeague v2 API has `/competitions/E/seasons/E2025/rounds` endpoint returning all rounds with `minGameStartDate`/`maxGameStartDate` date ranges. Games already have `round` field — filtered from the existing all-games cache.
+- **Round Detection Logic:** Find round whose date range contains today. Between rounds: pick whichever is nearer (next upcoming vs most recent past) by day count.
+- **Serbian Time:** Used `Intl.DateTimeFormat` with `timeZone: 'Europe/Belgrade'` for CET/CEST display — no external library needed.
+- **Output Format:** Games grouped by date within the round. Finished games: ✅ with final score + winner. Upcoming: ⏳ with kickoff time. Header shows round name.
+- **New types:** `RoundSchedule`, `RoundGame` in `types.ts`. New `StatsPort.getCurrentRoundGames()` method.
+- **Files changed (7):** euroleague.adapter.ts, command-router.ts, message-composer.ts, types.ts, stats.port.ts, command-router.test.ts, game-tracker.test.ts
+- **Test Results:** 100 tests passing, build clean.
