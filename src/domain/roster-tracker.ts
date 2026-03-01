@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs';
 import type { FantasyRoster, PlayByPlayEvent, PlayByPlayEventType, RosteredPlayer, RosterRound } from './types.js';
+import { escapeMarkdownV2, bold, codeBlock } from '../shared/markdown-v2.js';
 
 const NOTABLE_EVENT_TYPES: ReadonlySet<PlayByPlayEventType> = new Set([
   'two_pointer_made',
@@ -52,13 +53,14 @@ export class RosterTracker {
 
   getOverview(): string {
     if (!this.loaded || this.rosterData.length === 0) {
-      return '📋 No fantasy rosters loaded.';
+      return escapeMarkdownV2('📋 No fantasy rosters loaded.');
     }
 
-    const lines = [`🏀 Fantasy Rosters — Matchday ${this.roundNumber}\n`];
+    const e = escapeMarkdownV2;
+    const parts = [`🏀 ${bold('Fantasy Rosters')} — ${e('Matchday ' + this.roundNumber)}\n`];
 
     for (const roster of this.rosterData) {
-      lines.push(`👤 ${roster.ownerName}`);
+      parts.push(`👤 ${bold(roster.ownerName)}`);
 
       const hasPositionData = roster.players.some(p => p.courtPosition != null);
 
@@ -70,30 +72,35 @@ export class RosterTracker {
         const bench = sorted.filter(p => p.courtPosition != null && p.courtPosition >= 6 && p.courtPosition <= 10);
         const coach = sorted.filter(p => p.courtPosition != null && p.courtPosition >= 11);
 
+        const lines: string[] = [];
+
         if (starters.length > 0) {
-          lines.push('  🏟 Starting Five:');
-          for (const p of starters) lines.push(`    ${this.formatPlayerLine(p)}`);
+          lines.push('── Starting Five ──');
+          for (const p of starters) lines.push(this.formatPlayerCodeBlock(p));
         }
 
         if (bench.length > 0) {
-          lines.push('  📋 Bench:');
-          for (const p of bench) lines.push(`    ${this.formatPlayerLine(p)}`);
+          lines.push('── Bench ──');
+          for (const p of bench) lines.push(this.formatPlayerCodeBlock(p));
         }
 
         if (coach.length > 0) {
-          lines.push('  🧑‍💼 Coach:');
-          for (const p of coach) lines.push(`    ${this.formatPlayerLine(p)}`);
+          lines.push('── Coach ──');
+          for (const p of coach) lines.push(this.formatPlayerCodeBlock(p));
         }
+
+        parts.push(codeBlock(lines.join('\n')));
       } else {
-        for (const p of roster.players) {
-          lines.push(`  • ${p.playerName} (${p.teamCode})`);
-        }
+        const lines = roster.players.map(
+          (p) => `${this.formatDisplayName(p.playerName).padEnd(14)} ${p.teamCode}`,
+        );
+        parts.push(codeBlock(lines.join('\n')));
       }
 
-      lines.push('');
+      parts.push('');
     }
 
-    return lines.join('\n').trimEnd();
+    return parts.join('\n').trimEnd();
   }
 
   isLoaded(): boolean {
@@ -127,6 +134,27 @@ export class RosterTracker {
       case 'Head Coach': return 'HC';
       default: return '';
     }
+  }
+
+  private formatPlayerLineMd(p: RosteredPlayer): string {
+    const e = escapeMarkdownV2;
+    const pos = p.position ? `${e(this.positionTag(p.position))} ` : '';
+    const name = bold(this.formatDisplayName(p.playerName));
+    const matchup = p.opponentCode ? ` vs ${p.opponentCode}` : '';
+    const captain = p.isCaptain ? ' ©' : '';
+    const fire = p.isOnFire ? ' 🔥' : '';
+    return `${pos}${name} ${e('(' + p.teamCode + matchup + ')')}${captain}${fire}`;
+  }
+
+  /** Format a player line for use inside a code block (no MarkdownV2 escaping). */
+  private formatPlayerCodeBlock(p: RosteredPlayer): string {
+    const pos = p.position ? this.positionTag(p.position).padEnd(3) : '   ';
+    const name = this.formatDisplayName(p.playerName).padEnd(14);
+    const team = p.teamCode.padEnd(4);
+    const matchup = p.opponentCode ? `vs ${p.opponentCode}` : '';
+    const captain = p.isCaptain ? ' ©' : '';
+    const fire = p.isOnFire ? ' 🔥' : '';
+    return `${pos}${name} ${team}${matchup}${captain}${fire}`;
   }
 
   private buildIndex(rosters: FantasyRoster[], roundNumber: number): void {

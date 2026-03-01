@@ -1,4 +1,5 @@
 import type { GameEvent, TrackedGame, PlayByPlayEvent, RoundSchedule, RoundGame } from './types.js';
+import { escapeMarkdownV2, bold, codeBlock } from '../shared/markdown-v2.js';
 
 export class MessageComposer {
   private teamNames = new Map<string, { home: string; away: string }>();
@@ -52,15 +53,15 @@ export class MessageComposer {
   }
 
   composeRoundGames(schedule: RoundSchedule): string {
-    if (schedule.games.length === 0) return '📅 No games found for the current round.';
+    if (schedule.games.length === 0) return escapeMarkdownV2('📅 No games found for the current round.');
 
-    const header = `🏀 ${schedule.roundName}`;
+    const header = `🏀 ${bold(schedule.roundName)}`;
     const gamesByDate = this.groupGamesByDate(schedule.games);
 
     const sections: string[] = [];
     for (const [dateLabel, games] of gamesByDate) {
-      const lines = games.map((g) => this.formatRoundGame(g));
-      sections.push(`📆 ${dateLabel}\n${lines.join('\n')}`);
+      const lines = games.map((g) => this.formatGameCodeBlock(g));
+      sections.push(`📆 ${escapeMarkdownV2(dateLabel)}\n${codeBlock(lines.join('\n'))}`);
     }
 
     return `${header}\n\n${sections.join('\n\n')}`;
@@ -101,6 +102,27 @@ export class MessageComposer {
     return `  ⏳ ${game.homeTeam.shortName} vs ${game.awayTeam.shortName}  🕐 ${time}`;
   }
 
+  /** Format a game line for use inside a code block (no MarkdownV2 escaping). */
+  private formatGameCodeBlock(game: RoundGame): string {
+    const home = game.homeTeam.code.padEnd(4);
+    const away = game.awayTeam.code.padEnd(4);
+
+    if (game.status === 'finished') {
+      const score = `${String(game.homeScore).padStart(3)}-${String(game.awayScore).padEnd(3)}`;
+      const winnerCode = game.homeScore > game.awayScore ? game.homeTeam.code : game.awayTeam.code;
+      return `✅ ${home} ${score} ${away} 🏆 ${winnerCode}`;
+    }
+
+    const time = new Intl.DateTimeFormat('sr-Latn', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Europe/Belgrade',
+      hour12: false,
+    }).format(new Date(game.startTime));
+
+    return `  ${home} vs  ${away} ${time}`;
+  }
+
   composeSchedule(games: Array<{ homeTeam: string; awayTeam: string; startTime: string; gameCode: number }>): string {
     if (games.length === 0) return '📅 No EuroLeague games scheduled for today.';
 
@@ -124,20 +146,21 @@ export class MessageComposer {
   }
 
   composeHelp(): string {
-    return [
-      '🏀 EuroleagueClaw — Commands:\n',
-      '/help — Show this message',
-      '/today — Today\'s EuroLeague schedule',
-      '/game <code> — Start tracking a game',
-      '/stop <code> — Stop tracking a game',
-      '/games — Current round schedule & results',
-      '/fantasy — Fantasy league overview',
-      '/roster — Fantasy roster overview',
-      '/mute <minutes> — Silence updates',
-      '/unmute — Resume updates',
-      '/trivia — Random trivia question',
-      '/status — Bot status',
-    ].join('\n');
+    const commands = [
+      '/help      — Show this message',
+      "/today     — Today's schedule",
+      '/game <n>  — Track a game',
+      '/stop <n>  — Stop tracking',
+      '/games     — Round schedule',
+      '/fantasy   — Fantasy overview',
+      '/roster    — Roster overview',
+      '/mute <m>  — Silence updates',
+      '/unmute    — Resume updates',
+      '/trivia    — Random trivia',
+      '/status    — Bot status',
+    ];
+
+    return `🏀 ${bold('EuroleagueClaw')}\n${codeBlock(commands.join('\n'))}`;
   }
 
   composeStatus(trackedCount: number, uptime: number): string {
@@ -147,8 +170,8 @@ export class MessageComposer {
 
   composeRosterMatch(event: PlayByPlayEvent, owners: string[]): string {
     const emoji = this.rosterEventEmoji(event.eventType);
-    const ownerList = owners.join(', ');
-    return `${emoji} ${event.playerName} — ${event.description}\n📋 On roster: ${ownerList}`;
+    const ownerList = escapeMarkdownV2(owners.join(', '));
+    return `${emoji} ${bold(event.playerName)} — ${escapeMarkdownV2(event.description)}\n📋 ${escapeMarkdownV2('On roster:')} ${ownerList}`;
   }
 
   private rosterEventEmoji(eventType: string): string {

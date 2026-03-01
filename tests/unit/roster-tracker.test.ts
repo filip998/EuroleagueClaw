@@ -165,13 +165,133 @@ describe('RosterTracker', () => {
       expect(overview).toContain('Matchday 15');
       expect(overview).toContain('Filip');
       expect(overview).toContain('Marko');
-      expect(overview).toContain('CAMPAZZO, FACUNDO');
-      expect(overview).toContain('VEZENKOV, SASHA');
+      // Player names displayed as formatted names inside code block
+      expect(overview).toContain('F. Campazzo');
+      expect(overview).toContain('S. Vezenkov');
     });
 
     it('should return "no rosters loaded" when not loaded', () => {
       const overview = tracker.getOverview();
       expect(overview).toContain('No fantasy rosters loaded');
+    });
+
+    it('should show starters/bench/coach sections when court positions present', () => {
+      tracker.loadRosters([{
+        ownerName: 'Filip',
+        players: [
+          { playerName: 'CAMPAZZO, FACUNDO', teamCode: 'MAD', position: 'Guard', courtPosition: 1 },
+          { playerName: 'TAVARES, WALTER', teamCode: 'MAD', position: 'Center', courtPosition: 2 },
+          { playerName: 'HEZONJA, MARIO', teamCode: 'MAD', position: 'Forward', courtPosition: 3 },
+          { playerName: 'LLULL, SERGIO', teamCode: 'MAD', position: 'Guard', courtPosition: 4 },
+          { playerName: 'ABALDE, ALBERTO', teamCode: 'MAD', position: 'Forward', courtPosition: 5 },
+          { playerName: 'POIRIER, VINCENT', teamCode: 'MAD', position: 'Center', courtPosition: 6 },
+          { playerName: 'CHUS MATEO', teamCode: 'MAD', position: 'Head Coach', courtPosition: 11 },
+        ],
+      }], 20);
+
+      const overview = tracker.getOverview();
+      expect(overview).toContain('Starting Five');
+      expect(overview).toContain('Bench');
+      expect(overview).toContain('Coach');
+      expect(overview).toContain('Matchday 20');
+    });
+
+    it('should show captain © indicator', () => {
+      tracker.loadRosters([{
+        ownerName: 'Filip',
+        players: [
+          { playerName: 'CAMPAZZO, FACUNDO', teamCode: 'MAD', courtPosition: 1, isCaptain: true },
+        ],
+      }], 5);
+
+      const overview = tracker.getOverview();
+      expect(overview).toContain('©');
+    });
+
+    it('should show fire 🔥 indicator', () => {
+      tracker.loadRosters([{
+        ownerName: 'Filip',
+        players: [
+          { playerName: 'CAMPAZZO, FACUNDO', teamCode: 'MAD', courtPosition: 1, isOnFire: true },
+        ],
+      }], 5);
+
+      const overview = tracker.getOverview();
+      expect(overview).toContain('🔥');
+    });
+
+    it('should show opponent codes when present', () => {
+      tracker.loadRosters([{
+        ownerName: 'Filip',
+        players: [
+          { playerName: 'CAMPAZZO, FACUNDO', teamCode: 'MAD', courtPosition: 1, opponentCode: 'BAR' },
+          { playerName: 'TAVARES, WALTER', teamCode: 'MAD', courtPosition: 2, opponentCode: 'OLY' },
+        ],
+      }], 8);
+
+      const overview = tracker.getOverview();
+      expect(overview).toContain('BAR');
+      expect(overview).toContain('OLY');
+    });
+
+    it('should show flat list when no court position data', () => {
+      tracker.loadRosters([{
+        ownerName: 'Filip',
+        players: [
+          { playerName: 'CAMPAZZO, FACUNDO', teamCode: 'MAD' },
+          { playerName: 'TAVARES, WALTER', teamCode: 'MAD' },
+        ],
+      }], 10);
+
+      const overview = tracker.getOverview();
+      // Without court positions, there should be no Starting Five / Bench sections
+      expect(overview).not.toContain('Starting Five');
+      expect(overview).not.toContain('Bench');
+      // Player names as formatted display names inside code block
+      expect(overview).toContain('F. Campazzo');
+      expect(overview).toContain('W. Tavares');
+    });
+  });
+
+  describe('loadRosters', () => {
+    it('should load rosters with matchday number', () => {
+      tracker.loadRosters([{
+        ownerName: 'Filip',
+        players: [{ playerName: 'CAMPAZZO, FACUNDO', teamCode: 'MAD' }],
+      }], 25);
+
+      expect(tracker.isLoaded()).toBe(true);
+      const overview = tracker.getOverview();
+      expect(overview).toContain('Matchday 25');
+    });
+
+    it('should default to matchday 0 when no matchday provided', () => {
+      tracker.loadRosters([{
+        ownerName: 'Filip',
+        players: [{ playerName: 'CAMPAZZO, FACUNDO', teamCode: 'MAD' }],
+      }]);
+
+      expect(tracker.isLoaded()).toBe(true);
+      const overview = tracker.getOverview();
+      expect(overview).toContain('Matchday 0');
+    });
+
+    it('should not be loaded when given empty rosters array', () => {
+      tracker.loadRosters([], 5);
+      expect(tracker.isLoaded()).toBe(false);
+    });
+
+    it('should update player index for event matching after loadRosters', () => {
+      tracker.loadRosters([{
+        ownerName: 'Marko',
+        players: [{ playerName: 'VEZENKOV, SASHA', teamCode: 'OLY' }],
+      }], 15);
+
+      const owners = tracker.matchEvent(makePbpEvent({
+        playerName: 'VEZENKOV, SASHA',
+        eventType: 'three_pointer_made',
+      }));
+      expect(owners).toContain('Marko');
     });
   });
 });
