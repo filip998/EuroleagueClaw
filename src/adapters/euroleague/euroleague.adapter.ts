@@ -1,5 +1,5 @@
 import type { StatsPort } from '../../ports/stats.port.js';
-import type { GameInfo, LiveScore, PlayByPlayEvent, PlayByPlayEventType, TeamInfo } from '../../domain/types.js';
+import type { GameInfo, LiveScore, PlayByPlayEvent, PlayByPlayEventType, TeamInfo, RoundSchedule, RoundGame } from '../../domain/types.js';
 import type { Logger } from '../../shared/logger.js';
 import { ApiError } from '../../shared/errors.js';
 import { withRetry } from '../../shared/retry.js';
@@ -180,6 +180,76 @@ export class EuroLeagueAdapter implements StatsPort {
       }));
   }
 
+  async getCurrentRoundGames(seasonCode: string, competitionCode: string): Promise<RoundSchedule> {
+    const comp = competitionCode || 'E';
+    const rounds = await this.fetchRounds(seasonCode, comp);
+    const currentRound = this.findCurrentRound(rounds);
+
+    if (!currentRound) {
+      return { roundNumber: 0, roundName: 'Unknown', games: [] };
+    }
+
+    const allGames = await this.fetchAllGames(seasonCode, comp);
+    const roundGames = allGames
+      .filter((g) => g.round === currentRound.round)
+      .sort((a, b) => (a.utcDate ?? a.date ?? '').localeCompare(b.utcDate ?? b.date ?? ''));
+
+    return {
+      roundNumber: currentRound.round,
+      roundName: currentRound.name,
+      games: roundGames.map((g): RoundGame => ({
+        gameCode: g.gameCode,
+        homeTeam: {
+          code: g.local?.club?.code ?? '',
+          name: g.local?.club?.name ?? '',
+          shortName: g.local?.club?.abbreviatedName ?? g.local?.club?.name ?? '',
+        },
+        awayTeam: {
+          code: g.road?.club?.code ?? '',
+          name: g.road?.club?.name ?? '',
+          shortName: g.road?.club?.abbreviatedName ?? g.road?.club?.name ?? '',
+        },
+        status: g.played ? 'finished' : 'scheduled',
+        startTime: g.utcDate ?? g.date ?? '',
+        homeScore: g.local?.score ?? 0,
+        awayScore: g.road?.score ?? 0,
+      })),
+    };
+  }
+
+  private async fetchRounds(seasonCode: string, competitionCode: string): Promise<ELRound[]> {
+    const data = await this.fetchJson<ELRoundsResponse>(
+      `v2/competitions/${competitionCode}/seasons/${seasonCode}/rounds`,
+    );
+    return data?.data ?? [];
+  }
+
+  private findCurrentRound(rounds: ELRound[]): ELRound | undefined {
+    if (rounds.length === 0) return undefined;
+    const now = new Date();
+
+    // Find a round whose date range contains today
+    const active = rounds.find((r) => {
+      const start = new Date(r.minGameStartDate);
+      const end = new Date(r.maxGameStartDate);
+      return now >= start && now <= end;
+    });
+    if (active) return active;
+
+    // Between rounds: pick the nearest one (next upcoming or most recent past)
+    const sorted = [...rounds].sort((a, b) => a.round - b.round);
+    const nextUpcoming = sorted.find((r) => new Date(r.minGameStartDate) > now);
+    const mostRecentPast = sorted.reverse().find((r) => new Date(r.maxGameStartDate) < now);
+
+    if (nextUpcoming && mostRecentPast) {
+      const daysToNext = (new Date(nextUpcoming.minGameStartDate).getTime() - now.getTime()) / 86400000;
+      const daysSinceLast = (now.getTime() - new Date(mostRecentPast.maxGameStartDate).getTime()) / 86400000;
+      return daysToNext < daysSinceLast ? nextUpcoming : mostRecentPast;
+    }
+
+    return nextUpcoming ?? mostRecentPast ?? sorted[0];
+  }
+
   private async fetchAllGames(seasonCode: string, competitionCode: string): Promise<ELGame[]> {
     // Return cached data if fresh enough
     if (this.gamesCache && Date.now() - this.gamesCache.fetchedAt < this.cacheTtlMs) {
@@ -291,6 +361,17 @@ interface ELGame {
 
 interface ELGamesResponse {
   data: ELGame[];
+}
+
+interface ELRound {
+  round: number;
+  name: string;
+  minGameStartDate: string;
+  maxGameStartDate: string;
+}
+
+interface ELRoundsResponse {
+  data: ELRound[];
 }
 
 type ELGameDetail = ELGame | { data: ELGame };

@@ -226,6 +226,24 @@ export interface RosterFetchResult {
   rosters: FantasyRoster[];
 }
 
+// ─── Round Schedule Types ─────────────────────────────────
+
+export interface RoundSchedule {
+  roundNumber: number;
+  roundName: string;
+  games: RoundGame[];
+}
+
+export interface RoundGame {
+  gameCode: number;
+  homeTeam: TeamInfo;
+  awayTeam: TeamInfo;
+  status: GameStatus;
+  startTime: string; // UTC ISO datetime
+  homeScore: number;
+  awayScore: number;
+}
+
 // ─── Event Priority ───────────────────────────────────────
 
 export type EventPriority = 'critical' | 'high' | 'normal' | 'low';

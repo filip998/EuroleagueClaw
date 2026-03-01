@@ -17,6 +17,7 @@ function createMockStats(): StatsPort {
     }),
     getPlayByPlay: vi.fn().mockResolvedValue([]),
     getScoreboard: vi.fn().mockResolvedValue([]),
+    getCurrentRoundGames: vi.fn().mockResolvedValue({ roundNumber: 1, roundName: 'Round 1', games: [] }),
   };
 }
 

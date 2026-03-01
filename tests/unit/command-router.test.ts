@@ -27,6 +27,21 @@ function createMockStats(): StatsPort {
     getLiveScore: vi.fn(),
     getPlayByPlay: vi.fn(),
     getScoreboard: vi.fn(),
+    getCurrentRoundGames: vi.fn().mockResolvedValue({
+      roundNumber: 30,
+      roundName: 'Round 30',
+      games: [
+        {
+          gameCode: 1,
+          homeTeam: { code: 'MAD', name: 'Real Madrid', shortName: 'Madrid' },
+          awayTeam: { code: 'OLY', name: 'Olympiacos', shortName: 'Olympiacos' },
+          status: 'finished',
+          startTime: '2025-03-01T20:00:00Z',
+          homeScore: 89,
+          awayScore: 78,
+        },
+      ],
+    }),
   };
 }
 
@@ -120,7 +135,8 @@ describe('CommandRouter', () => {
   it('should handle /games', async () => {
     const result = await router.handle(makeCmd('games'));
     expect(result).not.toBeNull();
-    expect(result!.text).toContain('No games');
+    expect(result!.text).toContain('Round 30');
+    expect(result!.text).toContain('Madrid');
   });
 
   it('should handle /status', async () => {

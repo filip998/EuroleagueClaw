@@ -1,4 +1,4 @@
-import type { GameEvent, TrackedGame, PlayByPlayEvent } from './types.js';
+import type { GameEvent, TrackedGame, PlayByPlayEvent, RoundSchedule, RoundGame } from './types.js';
 
 export class MessageComposer {
   private teamNames = new Map<string, { home: string; away: string }>();
@@ -51,6 +51,56 @@ export class MessageComposer {
     }
   }
 
+  composeRoundGames(schedule: RoundSchedule): string {
+    if (schedule.games.length === 0) return '📅 No games found for the current round.';
+
+    const header = `🏀 ${schedule.roundName}`;
+    const gamesByDate = this.groupGamesByDate(schedule.games);
+
+    const sections: string[] = [];
+    for (const [dateLabel, games] of gamesByDate) {
+      const lines = games.map((g) => this.formatRoundGame(g));
+      sections.push(`📆 ${dateLabel}\n${lines.join('\n')}`);
+    }
+
+    return `${header}\n\n${sections.join('\n\n')}`;
+  }
+
+  private groupGamesByDate(games: RoundGame[]): [string, RoundGame[]][] {
+    const groups = new Map<string, RoundGame[]>();
+    const fmt = new Intl.DateTimeFormat('sr-Latn', {
+      weekday: 'short',
+      day: 'numeric',
+      month: 'short',
+      timeZone: 'Europe/Belgrade',
+    });
+
+    for (const game of games) {
+      const dateKey = fmt.format(new Date(game.startTime));
+      const list = groups.get(dateKey) ?? [];
+      list.push(game);
+      groups.set(dateKey, list);
+    }
+
+    return [...groups.entries()];
+  }
+
+  private formatRoundGame(game: RoundGame): string {
+    if (game.status === 'finished') {
+      const winner = game.homeScore > game.awayScore ? game.homeTeam.shortName : game.awayTeam.shortName;
+      return `  ✅ ${game.homeTeam.shortName} ${game.homeScore} - ${game.awayScore} ${game.awayTeam.shortName}  🏆 ${winner}`;
+    }
+
+    const time = new Intl.DateTimeFormat('sr-Latn', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Europe/Belgrade',
+      hour12: false,
+    }).format(new Date(game.startTime));
+
+    return `  ⏳ ${game.homeTeam.shortName} vs ${game.awayTeam.shortName}  🕐 ${time}`;
+  }
+
   composeSchedule(games: Array<{ homeTeam: string; awayTeam: string; startTime: string; gameCode: number }>): string {
     if (games.length === 0) return '📅 No EuroLeague games scheduled for today.';
 
@@ -80,7 +130,7 @@ export class MessageComposer {
       '/today — Today\'s EuroLeague schedule',
       '/game <code> — Start tracking a game',
       '/stop <code> — Stop tracking a game',
-      '/games — List tracked games',
+      '/games — Current round schedule & results',
       '/fantasy — Fantasy league overview',
       '/roster — Fantasy roster overview',
       '/mute <minutes> — Silence updates',

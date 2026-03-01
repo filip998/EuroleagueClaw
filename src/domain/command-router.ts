@@ -105,9 +105,12 @@ export class CommandRouter {
         : `⚠️ Game ${gameCode} is not being tracked.`;
     });
 
-    this.commands.set('games', async (cmd) => {
-      const games = await this.deps.gameTracker.getTrackedGames(cmd.chatId);
-      return this.deps.messageComposer.composeTrackedGames(games);
+    this.commands.set('games', async () => {
+      const schedule = await this.deps.stats.getCurrentRoundGames(
+        this.deps.seasonCode,
+        this.deps.competitionCode,
+      );
+      return this.deps.messageComposer.composeRoundGames(schedule);
     });
 
     this.commands.set('mute', async (cmd) => {

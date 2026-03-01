@@ -2,6 +2,7 @@ import type {
   GameInfo,
   LiveScore,
   PlayByPlayEvent,
+  RoundSchedule,
 } from '../domain/types.js';
 
 /**
@@ -24,4 +25,7 @@ export interface StatsPort {
 
   /** Get the current live scoreboard (all live games) */
   getScoreboard(): Promise<LiveScore[]>;
+
+  /** Get all games for the current round */
+  getCurrentRoundGames(seasonCode: string, competitionCode: string): Promise<RoundSchedule>;
 }
