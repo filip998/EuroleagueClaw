@@ -96,37 +96,55 @@ export class ArenaSportAdapter implements TvSchedulePort {
   }
 
   private tryExtractTvSchemes(html: string): TvScheduleEntry[] {
-    // Look for window.TV_SCHEMES = [...] or similar assignment
-    const match = html.match(/window\.TV_SCHEMES\s*=\s*(\[[\s\S]*?\]);/);
+    // window.TV_SCHEMES is an object keyed by channel name
+    const match = html.match(/window\.TV_SCHEMES\s*=\s*(\{[\s\S]*?\});/);
     if (!match) return [];
 
     try {
-      const raw = JSON.parse(match[1]) as TvSchemeRaw[];
-      return raw.map((item) => this.mapRawScheme(item)).filter((e): e is TvScheduleEntry => e !== null);
+      const raw = JSON.parse(match[1]) as Record<string, TvSchemeChannel>;
+      const entries: TvScheduleEntry[] = [];
+
+      for (const [channelName, channelData] of Object.entries(raw)) {
+        if (!channelData || typeof channelData !== 'object') continue;
+        const days = channelData.days;
+        if (!days || typeof days !== 'object') continue;
+
+        for (const [dateStr, dayData] of Object.entries(days)) {
+          if (!dayData || typeof dayData !== 'object') continue;
+          const emisije = (dayData as Record<string, unknown>).emisije;
+          if (!Array.isArray(emisije)) continue;
+
+          for (const em of emisije) {
+            if (!em || typeof em !== 'object') continue;
+            const entry = em as TvSchemeEmisija;
+            const content = (entry.content ?? '').trim();
+            const time = (entry.time ?? '').trim();
+            const category = (entry.category ?? '').toLowerCase();
+            const description = (entry.description ?? '').toLowerCase();
+            const isLive = description === 'uzivo' || description === 'uživo';
+
+            if (!content || !time) continue;
+            // Pre-filter: only include entries with EVROLIGA category
+            // or whose title matches EuroLeague team names
+            const isEuroCategory = category === 'evroliga';
+
+            entries.push({
+              channelName: channelName.trim(),
+              channelShort: this.resolveChannelShort(channelName.trim()),
+              date: dateStr,
+              time: time.slice(0, 5),
+              title: isEuroCategory ? `[EVROLIGA] ${content}` : content,
+              isLive,
+            });
+          }
+        }
+      }
+
+      return entries;
     } catch {
       this.logger.debug('Failed to parse window.TV_SCHEMES JSON');
       return [];
     }
-  }
-
-  private mapRawScheme(item: TvSchemeRaw): TvScheduleEntry | null {
-    const channelName = (item.channel_name ?? item.channelName ?? '').trim();
-    const title = (item.title ?? item.name ?? '').trim();
-    const dateStr = (item.date ?? '').trim();
-    const timeStr = (item.time ?? item.start_time ?? '').trim();
-    const category = (item.category ?? '').trim().toLowerCase();
-    const isLive = this.detectLive(title, category);
-
-    if (!channelName || !title) return null;
-
-    return {
-      channelName,
-      channelShort: this.resolveChannelShort(channelName),
-      date: this.normalizeDate(dateStr),
-      time: timeStr.slice(0, 5), // "20:30:00" → "20:30"
-      title,
-      isLive,
-    };
   }
 
   /** Parse schedule entries from DOM-like HTML structure. */
@@ -285,13 +303,15 @@ export class ArenaSportAdapter implements TvSchedulePort {
 
 // ─── Raw JSON shape from window.TV_SCHEMES ───
 
-interface TvSchemeRaw {
-  channel_name?: string;
-  channelName?: string;
-  title?: string;
-  name?: string;
-  date?: string;
+interface TvSchemeChannel {
+  days?: Record<string, { emisije?: TvSchemeEmisija[] }>;
+  channel_image?: string;
+}
+
+interface TvSchemeEmisija {
+  content?: string;
   time?: string;
-  start_time?: string;
   category?: string;
+  sport?: string;
+  description?: string;
 }
