@@ -247,13 +247,17 @@ export class EuroLeagueAdapter implements StatsPort {
 
     if (!candidate) return undefined;
 
-    // If ALL games in the candidate round are finished and the last game day
-    // was before today, advance to the next upcoming round (show the schedule).
+    // If ALL games in the candidate round are finished and the last actual
+    // game date was before today, advance to the next upcoming round.
+    // We check real game dates, not round metadata (which can be wider).
     const candidateGames = allGames.filter((g) => g.round === candidate!.round);
     const allPlayed = candidateGames.length > 0 && candidateGames.every((g) => g.played);
-    const maxDate = candidate.maxGameStartDate.slice(0, 10);
+    const lastGameDate = candidateGames.reduce((max, g) => {
+      const d = (g.utcDate ?? g.date ?? '').slice(0, 10);
+      return d > max ? d : max;
+    }, '');
 
-    if (allPlayed && maxDate < todayStr) {
+    if (allPlayed && lastGameDate < todayStr) {
       const nextRound = sorted.find((r) => r.round > candidate!.round);
       if (nextRound) return nextRound;
     }
