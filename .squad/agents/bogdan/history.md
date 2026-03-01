@@ -32,3 +32,26 @@
 - **Scaling constraint** — SQLite forces `max-replicas=1`. Horizontal scaling would require replacing the storage layer first (architecture decision, not DevOps).
 - **Recommendation** — Task Strahinja with CI fix + CD workflow + one-time Azure resource setup. Bounded ~1 week effort.
 - **Squad workflows** — 10+ workflows in `.github/workflows/` are Squad tooling boilerplate (triage, heartbeat, promote, release), not project-specific CI/CD.
+
+### Fantasy Roster Tracking Design (2025-07-18)
+- **Play-by-play API is the blocker.** `EuroLeagueAdapter.getPlayByPlay()` returns `[]` — the v2 public API has no PBP endpoint. The `StatsPort` interface and `PlayByPlayEvent` domain type are fully defined and ready. Only the adapter implementation is missing.
+- **GameTracker only uses `getLiveScore()`** — detects events by diffing aggregate scores. No player-level data flows through the system today.
+- **`lastEventId` field exists on `TrackedGame`** but is never used (always `null`). It was designed for PBP cursor-based pagination — already wired in the storage layer.
+- **Roster tracking does NOT need a new port.** Rosters are loaded from `data/rosters.json` at startup (same pattern as `data/trivia.json`). No database table needed — rosters are ephemeral per-round.
+- **Integration point:** `GameTracker.pollGame()` gets a second callback (`onPlayByPlay`) alongside existing `onEvent`. PBP events flow to a `RosterTracker` domain service for matching.
+- **Existing `FantasyPort`/`DunkestAdapter` are unrelated.** They handle Dunkest league standings (rankings/points). The roster feature is a separate concern — friends' player picks, not fantasy platform standings.
+- **Player name matching is critical.** EuroLeague PBP API likely uses `"LASTNAME, FIRSTNAME"` format. A normalization function is needed for case-insensitive matching.
+- **Key new files:** `src/domain/roster-tracker.ts` (domain service), `data/rosters.json` (roster data), `tests/unit/roster-tracker.test.ts`.
+- **Key modified files:** `src/domain/game-tracker.ts` (PBP polling), `src/domain/types.ts` (roster types), `src/container.ts` (wiring), `src/domain/message-composer.ts` (roster match formatting), `src/domain/command-router.ts` (`/roster` command).
+- **Full architecture proposal** written to `.squad/decisions.md`.
+
+### Fantasy Roster Tracking Implementation (2026-03-01)
+- **Architecture approved and implementation complete.** 8 files modified, 81 tests passing, build passes.
+- **PBP API endpoint found:** `https://live.euroleague.net/api` (separate service, legacy widget API). Implemented `EuroLeagueAdapter.getPlayByPlay()`.
+- **RosterTracker service created** — loads `data/rosters.json`, normalizes player names (lowercase+trim), matches PBP events against rosters.
+- **GameTracker extended** — added `onPlayByPlay` callback (optional 6th param) for backward compatibility. Polls PBP in each `pollGame()` cycle.
+- **Event filtering implemented** — only notable events trigger roster notifications: made shots (2pt/3pt/FT), assists, steals, blocks. No spam from rebounds, fouls, subs.
+- **Container wiring complete** — RosterTracker loaded at startup; PBP callback injected into GameTracker; roster matching runs for each event.
+- **Key decisions:** PBP base URL hardcoded (different API); RosterTracker uses readFileSync (matches TriviaService pattern, flagged for refactor); event filtering reduces notification noise.
+- **Files modified:** euroleague.adapter.ts, types.ts, roster-tracker.ts (new), game-tracker.ts, message-composer.ts, command-router.ts, container.ts, rosters.json (new).
+- **Test results:** All 81 tests passing. No existing tests modified (backward compatible design).

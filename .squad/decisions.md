@@ -85,3 +85,97 @@ EuroleagueClaw does **not** need a dedicated DevOps team member. The deployment 
 2. Remove `readFileSync` from `TriviaService` — pass data array or use a port
 3. Wire `SchedulerPort` or delete it
 4. Generalize `OutgoingMessage.parseMode` — remove Telegram-specific types from domain
+
+---
+
+## Fantasy Roster Tracking — Architecture Proposal — Bogdan (2026-03-01)
+
+**Status:** ARCHITECTURE COMPLETE
+
+**Verdict:** Feature architecture approved; ready for implementation.
+
+### Summary
+
+Design a feature where friends submit fantasy rosters (player picks), and during live EuroLeague games, the bot sends notifications when a rostered player makes a play (scores, assists, steals, etc.).
+
+### Critical Finding: Play-by-Play API
+
+The feature depends entirely on play-by-play data. Research revealed:
+- `EuroLeagueAdapter.getPlayByPlay()` was returning `[]` (not available in v2 public API)
+- New endpoint found: `https://live.euroleague.net/api` (separate service, legacy widget API)
+- `StatsPort` interface and `PlayByPlayEvent` domain type already defined and ready
+
+### Architecture Components
+
+1. **Roster Input** — JSON file (`data/rosters.json`) with player picks per owner, round-based
+2. **RosterTracker Service** — Loads rosters, normalizes player names (case-insensitive), matches PBP events
+3. **GameTracker Extension** — Add `onPlayByPlay` callback for PBP polling
+4. **MessageComposer** — New `composeRosterMatch()` method, `/roster` command
+5. **Container Wiring** — Load rosters at startup, inject PBP callback into GameTracker
+
+### Implementation Phases
+
+- **Phase 0:** PBP API research (BLOCKER) ✅ Complete
+- **Phase 1:** Roster Tracker core (types, service, unit tests)
+- **Phase 2:** Integration (GameTracker, MessageComposer, CommandRouter, container)
+- **Phase 3:** Polish (fuzzy matching, event filtering, dedup, throttling)
+
+### Key Decisions
+
+1. **PBP API base URL hardcoded** — `https://live.euroleague.net/api` is a separate service. Added as module-level constant.
+2. **RosterTracker uses readFileSync** — Same pattern as TriviaService. Flagged for refactor alongside TriviaService.
+3. **GameTracker.onPlayByPlay optional** — Backward compatible; callback receives all PBP events, container wires roster matching.
+4. **Name matching case-insensitive** — Normalize via lowercase + trim. API returns `"LASTNAME, FIRSTNAME"` format.
+5. **Only notable events** — Filter to: made shots (2pt/3pt/FT), assists, steals, blocks. No spam from rebounds, fouls, subs.
+
+### Files Changed (8 total)
+
+| File | Action |
+|------|--------|
+| `data/rosters.json` | CREATE |
+| `src/domain/types.ts` | MODIFY — Add FantasyRoster, RosteredPlayer, RosterRound, RosterMatchEvent |
+| `src/domain/roster-tracker.ts` | CREATE — New domain service |
+| `src/domain/game-tracker.ts` | MODIFY — Add PBP polling + onPlayByPlay callback |
+| `src/domain/message-composer.ts` | MODIFY — Add composeRosterMatch(), update help |
+| `src/domain/command-router.ts` | MODIFY — Add /roster command |
+| `src/container.ts` | MODIFY — Wire RosterTracker + PBP callback |
+| `src/adapters/euroleague/euroleague.adapter.ts` | MODIFY — Implement getPlayByPlay() |
+
+---
+
+## Fantasy Roster Tracking — Implementation — Strahinja (2026-03-01)
+
+**Status:** IMPLEMENTATION COMPLETE
+
+**Verdict:** Full end-to-end implementation done. 8 files modified, 81 tests passing, build passes.
+
+### Implementation Summary
+
+Implemented the complete fantasy roster tracking pipeline: PBP API → RosterTracker → GameTracker integration → MessageComposer → CommandRouter → container wiring.
+
+### Key Decisions
+
+1. **PBP API base URL hardcoded** — `https://live.euroleague.net/api` is a separate service from the v2 API. Added as module-level constant `PBP_API_BASE` rather than config-driven.
+
+2. **RosterTracker uses readFileSync** — Same pattern as TriviaService. Flagged as architectural violation but accepted for v1. When refactoring TriviaService, refactor RosterTracker too.
+
+3. **GameTracker.onPlayByPlay is optional 6th constructor param** — Keeps backward compatibility; existing tests pass unchanged. Callback receives all PBP events, container wires roster matching into it.
+
+4. **RosterTracker normalizes names via lowercase+trim** — Player name matching between `rosters.json` and PBP API events uses case-insensitive comparison. API returns names like `"LESSORT, MATHIAS"` which matches directly.
+
+5. **Only notable events trigger roster notifications** — Filtered to: made shots (2pt/3pt/FT), assists, steals, blocks. No spam from rebounds, fouls, subs, timeouts.
+
+### Files Changed (8 total)
+
+- `src/adapters/euroleague/euroleague.adapter.ts` — Real PBP implementation
+- `src/domain/types.ts` — Added FantasyRoster, RosteredPlayer, RosterRound
+- `src/domain/roster-tracker.ts` — NEW: RosterTracker service
+- `src/domain/game-tracker.ts` — Added onPlayByPlay callback + PBP polling
+- `src/domain/message-composer.ts` — Added composeRosterMatch + /roster in help
+- `src/domain/command-router.ts` — Added /roster command
+- `src/container.ts` — Wired RosterTracker + PBP callback
+- `data/rosters.json` — Sample roster data
+
+### Test Results
+
+All 81 tests passing. Build passes.
