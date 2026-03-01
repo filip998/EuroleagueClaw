@@ -187,23 +187,35 @@ export class CommandRouter {
   }
 
   private matchTvEntry(game: RoundGame, tvEntries: TvScheduleEntry[]): TvScheduleEntry | undefined {
-    const homeLC = game.homeTeam.shortName.toLowerCase();
-    const awayLC = game.awayTeam.shortName.toLowerCase();
-    const homeName = game.homeTeam.name.toLowerCase();
-    const awayName = game.awayTeam.name.toLowerCase();
-    const homeCode = game.homeTeam.code.toLowerCase();
-    const awayCode = game.awayTeam.code.toLowerCase();
+    const gameDate = game.startTime.slice(0, 10);
 
-    const gameDate = game.startTime.slice(0, 10); // "YYYY-MM-DD"
+    const homeNames = this.teamNameVariants(game.homeTeam);
+    const awayNames = this.teamNameVariants(game.awayTeam);
 
     return tvEntries.find((tv) => {
-      // Date must match if both are available
       if (tv.date && gameDate && tv.date !== gameDate) return false;
 
       const titleLC = tv.title.toLowerCase();
-      const matchesHome = titleLC.includes(homeLC) || titleLC.includes(homeName) || titleLC.includes(homeCode);
-      const matchesAway = titleLC.includes(awayLC) || titleLC.includes(awayName) || titleLC.includes(awayCode);
+      const matchesHome = homeNames.some((n) => titleLC.includes(n));
+      const matchesAway = awayNames.some((n) => titleLC.includes(n));
       return matchesHome && matchesAway;
     });
+  }
+
+  /** Generate name variants for fuzzy TV matching (lowercase). */
+  private teamNameVariants(team: { code: string; name: string; shortName: string }): string[] {
+    const variants = new Set<string>();
+    const short = team.shortName.toLowerCase().trim();
+    const full = team.name.toLowerCase().trim();
+
+    if (short.length > 2) variants.add(short);
+    if (full.length > 2) variants.add(full);
+
+    // Add individual words longer than 3 chars (catches "Efes" from "Anadolu Efes")
+    for (const word of `${short} ${full}`.split(/\s+/)) {
+      if (word.length > 3) variants.add(word);
+    }
+
+    return [...variants];
   }
 }
