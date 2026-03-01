@@ -1,0 +1,4 @@
+{
+  "universes_allowed": ["old-serbian-names"],
+  "max_agents_per_universe": 10
+}
