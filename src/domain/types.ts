@@ -199,6 +199,23 @@ export interface TriviaQuestion {
   category: string;
 }
 
+// ─── Fantasy Roster Types ─────────────────────────────
+
+export interface FantasyRoster {
+  ownerName: string;
+  players: RosteredPlayer[];
+}
+
+export interface RosteredPlayer {
+  playerName: string;
+  teamCode: string;
+}
+
+export interface RosterRound {
+  roundNumber: number;
+  rosters: FantasyRoster[];
+}
+
 // ─── Event Priority ───────────────────────────────────────
 
 export type EventPriority = 'critical' | 'high' | 'normal' | 'low';

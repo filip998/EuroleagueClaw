@@ -2,6 +2,7 @@ import type { IncomingCommand, OutgoingMessage, GameInfo } from './types.js';
 import type { GameTracker } from './game-tracker.js';
 import type { FantasyTracker } from './fantasy-tracker.js';
 import type { TriviaService } from './trivia-service.js';
+import type { RosterTracker } from './roster-tracker.js';
 import type { MessageComposer } from './message-composer.js';
 import type { StatsPort } from '../ports/stats.port.js';
 import type { Logger } from '../shared/logger.js';
@@ -18,6 +19,7 @@ interface CommandRouterDeps {
   startTime: number;
   fantasyTracker?: FantasyTracker;
   triviaService?: TriviaService;
+  rosterTracker?: RosterTracker;
 }
 
 type CommandFn = (cmd: IncomingCommand) => Promise<string>;
@@ -142,6 +144,13 @@ export class CommandRouter {
         return '🤷 Trivia not available.';
       }
       return this.deps.triviaService.getRandomTrivia();
+    });
+
+    this.commands.set('roster', async () => {
+      if (!this.deps.rosterTracker || !this.deps.rosterTracker.isLoaded()) {
+        return '📋 No fantasy rosters loaded.';
+      }
+      return this.deps.rosterTracker.getOverview();
     });
   }
 }

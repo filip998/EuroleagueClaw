@@ -1,4 +1,4 @@
-import type { GameEvent, TrackedGame } from './types.js';
+import type { GameEvent, TrackedGame, PlayByPlayEvent } from './types.js';
 
 export class MessageComposer {
   private teamNames = new Map<string, { home: string; away: string }>();
@@ -82,6 +82,7 @@ export class MessageComposer {
       '/stop <code> — Stop tracking a game',
       '/games — List tracked games',
       '/fantasy — Fantasy league overview',
+      '/roster — Fantasy roster overview',
       '/mute <minutes> — Silence updates',
       '/unmute — Resume updates',
       '/trivia — Random trivia question',
@@ -92,6 +93,29 @@ export class MessageComposer {
   composeStatus(trackedCount: number, uptime: number): string {
     const uptimeStr = this.formatDuration(uptime);
     return `🤖 EuroleagueClaw Status\n\n  ⏱ Uptime: ${uptimeStr}\n  📊 Tracking: ${trackedCount} game(s)`;
+  }
+
+  composeRosterMatch(event: PlayByPlayEvent, owners: string[]): string {
+    const emoji = this.rosterEventEmoji(event.eventType);
+    const ownerList = owners.join(', ');
+    return `${emoji} ${event.playerName} — ${event.description}\n📋 On roster: ${ownerList}`;
+  }
+
+  private rosterEventEmoji(eventType: string): string {
+    switch (eventType) {
+      case 'two_pointer_made':
+      case 'three_pointer_made':
+      case 'free_throw_made':
+        return '🏀';
+      case 'assist':
+        return '🎯';
+      case 'steal':
+        return '🔥';
+      case 'block':
+        return '🛡️';
+      default:
+        return '📊';
+    }
   }
 
   private gameStart(home: string, away: string): string {

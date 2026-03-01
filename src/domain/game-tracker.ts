@@ -1,4 +1,4 @@
-import type { GameEvent, GameInfo, TrackedGame, LiveScore } from './types.js';
+import type { GameEvent, GameInfo, TrackedGame, LiveScore, PlayByPlayEvent } from './types.js';
 import type { StatsPort } from '../ports/stats.port.js';
 import type { StoragePort } from '../ports/storage.port.js';
 import type { Logger } from '../shared/logger.js';
@@ -23,6 +23,7 @@ export class GameTracker {
     private readonly logger: Logger,
     private readonly pollIntervalMs: number,
     private readonly onEvent: (chatId: string, event: GameEvent) => Promise<void>,
+    private readonly onPlayByPlay?: (chatId: string, events: PlayByPlayEvent[]) => Promise<void>,
   ) {}
 
   async startTracking(chatId: string, gameCode: number, seasonCode: string): Promise<TrackedGame> {
@@ -139,6 +140,27 @@ export class GameTracker {
 
       for (const event of events) {
         await this.onEvent(game.trackedByChatId, event);
+      }
+
+      // Poll play-by-play for live games
+      if (liveScore.status === 'live' && this.onPlayByPlay) {
+        try {
+          const pbpEvents = await this.stats.getPlayByPlay(
+            game.gameCode,
+            game.seasonCode,
+            game.lastEventId,
+          );
+
+          if (pbpEvents.length > 0) {
+            const lastEvent = pbpEvents[pbpEvents.length - 1];
+            await this.storage.updateTrackedGame(gameId, {
+              lastEventId: lastEvent.eventId,
+            });
+            await this.onPlayByPlay(game.trackedByChatId, pbpEvents);
+          }
+        } catch (err) {
+          this.logger.warn({ gameId, error: String(err) }, 'PBP poll failed');
+        }
       }
 
       if (liveScore.status === 'finished') {

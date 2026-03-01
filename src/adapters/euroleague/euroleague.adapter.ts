@@ -4,6 +4,40 @@ import type { Logger } from '../../shared/logger.js';
 import { ApiError } from '../../shared/errors.js';
 import { withRetry } from '../../shared/retry.js';
 
+/** Separate base URL for the Play-by-Play API (different service from v2) */
+const PBP_API_BASE = 'https://live.euroleague.net/api';
+
+const PLAY_TYPE_MAP: Record<string, PlayByPlayEventType> = {
+  '2FGM': 'two_pointer_made',
+  '2FGA': 'two_pointer_missed',
+  '3FGM': 'three_pointer_made',
+  '3FGA': 'three_pointer_missed',
+  'FTM': 'free_throw_made',
+  'FTA': 'free_throw_missed',
+  'D': 'rebound',
+  'O': 'rebound',
+  'AS': 'assist',
+  'ST': 'steal',
+  'BLK': 'block',
+  'FV': 'block',
+  'TO': 'turnover',
+  'CM': 'foul',
+  'CMU': 'foul',
+  'CMT': 'foul',
+  'C': 'foul',
+  'TOUT': 'timeout',
+  'TV': 'timeout',
+  'IN': 'substitution',
+  'OUT': 'substitution',
+  'BP': 'quarter_start',
+  'EP': 'quarter_end',
+};
+
+function mapPlayType(playType: string | undefined): PlayByPlayEventType {
+  if (!playType) return 'unknown';
+  return PLAY_TYPE_MAP[playType.trim()] ?? 'unknown';
+}
+
 /**
  * EuroLeague API adapter.
  * Uses the public v2 API at api-live.euroleague.net/v2/
@@ -55,13 +89,78 @@ export class EuroLeagueAdapter implements StatsPort {
   }
 
   async getPlayByPlay(
-    _gameCode: number,
-    _seasonCode: string,
-    _sinceEventId?: string | null,
+    gameCode: number,
+    seasonCode: string,
+    sinceEventId?: string | null,
   ): Promise<PlayByPlayEvent[]> {
-    // Play-by-play not available in v2 public API
-    // Will be implemented when a suitable endpoint is found
-    return [];
+    const url = `${PBP_API_BASE}/PlaybyPlay?gamecode=${gameCode}&seasoncode=${seasonCode}`;
+    this.logger.debug({ url }, 'Fetching PBP API');
+
+    let data: PBPResponse | null;
+    try {
+      const response = await withRetry(
+        () => fetch(url, {
+          headers: { 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(10000),
+        }),
+        { maxAttempts: 2, baseDelayMs: 1000, logger: this.logger },
+      );
+
+      if (!response.ok) {
+        if (response.status === 404) return [];
+        throw new ApiError(`PBP API returned ${response.status}`, response.status, url);
+      }
+
+      data = (await response.json()) as PBPResponse;
+    } catch (err) {
+      if (err instanceof ApiError) throw err;
+      this.logger.error({ url, error: String(err) }, 'PBP API fetch error');
+      throw new ApiError(`Failed to fetch PBP`, 0, url, err);
+    }
+
+    if (!data) return [];
+
+    const quarters: [string, PBPRawEvent[]][] = [
+      ['FirstQuarter', data.FirstQuarter ?? []],
+      ['SecondQuarter', data.SecondQuarter ?? []],
+      ['ThirdQuarter', data.ThirdQuarter ?? []],
+      ['ForthQuarter', data.ForthQuarter ?? []],
+      ['ExtraTime', data.ExtraTime ?? []],
+    ];
+
+    const events: PlayByPlayEvent[] = [];
+    let lastHomeScore = 0;
+    let lastAwayScore = 0;
+
+    for (let qi = 0; qi < quarters.length; qi++) {
+      const quarter = qi + 1;
+      const rawEvents = quarters[qi][1];
+
+      for (const raw of rawEvents) {
+        if (raw.POINTS_A != null) lastHomeScore = raw.POINTS_A;
+        if (raw.POINTS_B != null) lastAwayScore = raw.POINTS_B;
+
+        events.push({
+          eventId: String(raw.NUMBEROFPLAY),
+          gameCode,
+          quarter,
+          clock: (raw.MARKERTIME ?? '').trim(),
+          teamCode: (raw.CODETEAM ?? '').trim(),
+          playerName: (raw.PLAYER ?? '').trim(),
+          eventType: mapPlayType(raw.PLAYTYPE),
+          description: (raw.PLAYINFO ?? '').trim(),
+          homeScore: lastHomeScore,
+          awayScore: lastAwayScore,
+        });
+      }
+    }
+
+    if (sinceEventId) {
+      const sinceId = parseInt(sinceEventId, 10);
+      return events.filter((e) => parseInt(e.eventId, 10) > sinceId);
+    }
+
+    return events;
   }
 
   async getScoreboard(): Promise<LiveScore[]> {
@@ -195,3 +294,35 @@ interface ELGamesResponse {
 }
 
 type ELGameDetail = ELGame | { data: ELGame };
+
+// ─── PBP API response shapes ─────────────────────────
+
+interface PBPRawEvent {
+  NUMBEROFPLAY: number;
+  CODETEAM: string;
+  PLAYER_ID: string;
+  PLAYTYPE: string;
+  PLAYER: string;
+  TEAM: string;
+  DORSAL: string;
+  MINUTE: number;
+  MARKERTIME: string;
+  POINTS_A: number | null;
+  POINTS_B: number | null;
+  PLAYINFO: string;
+  COMMENT: string;
+}
+
+interface PBPResponse {
+  Live: boolean;
+  TeamA: string;
+  TeamB: string;
+  CodeTeamA: string;
+  CodeTeamB: string;
+  ActualQuarter: number;
+  FirstQuarter: PBPRawEvent[];
+  SecondQuarter: PBPRawEvent[];
+  ThirdQuarter: PBPRawEvent[];
+  ForthQuarter: PBPRawEvent[];
+  ExtraTime: PBPRawEvent[];
+}

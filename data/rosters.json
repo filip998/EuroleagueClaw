@@ -1,0 +1,19 @@
+{
+  "roundNumber": 34,
+  "rosters": [
+    {
+      "ownerName": "Filip",
+      "players": [
+        { "playerName": "CAMPAZZO, FACUNDO", "teamCode": "MAD" },
+        { "playerName": "HEZONJA, MARIO", "teamCode": "PAR" }
+      ]
+    },
+    {
+      "ownerName": "Marko",
+      "players": [
+        { "playerName": "JAMES, MIKE", "teamCode": "MCO" },
+        { "playerName": "LESSORT, MATHIAS", "teamCode": "PAN" }
+      ]
+    }
+  ]
+}

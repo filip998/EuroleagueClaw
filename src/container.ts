@@ -13,6 +13,7 @@ import { CommandRouter } from './domain/command-router.js';
 import { MessageComposer } from './domain/message-composer.js';
 import { ThrottleManager } from './domain/throttle-manager.js';
 import { TriviaService } from './domain/trivia-service.js';
+import { RosterTracker } from './domain/roster-tracker.js';
 import { createLogger, type Logger } from './shared/logger.js';
 
 export interface AppContainer {
@@ -58,6 +59,17 @@ export function createContainer(config: AppConfig): AppContainer {
     logger,
   );
 
+  // Roster tracker (optional — loads from data/rosters.json)
+  const rosterTracker = new RosterTracker();
+  try {
+    rosterTracker.loadFromFile('./data/rosters.json');
+    if (rosterTracker.isLoaded()) {
+      logger.info('Fantasy roster tracking enabled');
+    }
+  } catch {
+    logger.warn('Could not load rosters from data/rosters.json');
+  }
+
   const gameTracker = new GameTracker(
     stats,
     storage,
@@ -78,6 +90,17 @@ export function createContainer(config: AppConfig): AppContainer {
       await chat.sendMessage({ chatId, text });
       throttle.recordSent(chatId);
       await storage.markEventSent(chatId, String(event.gameCode), event.type, eventKey, text);
+    },
+    async (chatId, events) => {
+      if (!rosterTracker.isLoaded()) return;
+
+      for (const event of events) {
+        const owners = rosterTracker.matchEvent(event);
+        if (owners.length > 0) {
+          const text = messageComposer.composeRosterMatch(event, owners);
+          await chat.sendMessage({ chatId, text });
+        }
+      }
     },
   );
 
@@ -102,6 +125,7 @@ export function createContainer(config: AppConfig): AppContainer {
     startTime: Date.now(),
     fantasyTracker,
     triviaService,
+    rosterTracker,
   });
 
   return {
