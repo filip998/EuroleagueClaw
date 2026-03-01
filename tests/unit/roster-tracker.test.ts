@@ -162,11 +162,11 @@ describe('RosterTracker', () => {
 
       const overview = tracker.getOverview();
       expect(overview).toContain('Fantasy Rosters');
-      expect(overview).toContain('Round 15');
+      expect(overview).toContain('Matchday 15');
       expect(overview).toContain('Filip');
       expect(overview).toContain('Marko');
-      expect(overview).toContain('campazzo, facundo');
-      expect(overview).toContain('vezenkov, sasha');
+      expect(overview).toContain('CAMPAZZO, FACUNDO');
+      expect(overview).toContain('VEZENKOV, SASHA');
     });
 
     it('should return "no rosters loaded" when not loaded', () => {

@@ -64,10 +64,10 @@ export async function createContainer(config: AppConfig): Promise<AppContainer> 
   if (config.dunkest.bearerToken && config.dunkest.fantasyTeamIds.length > 0) {
     const dunkestForRosters = new DunkestAdapter(config.dunkest.apiBase, config.dunkest.bearerToken, logger);
     try {
-      const apiRosters = await dunkestForRosters.getRosters(config.dunkest.fantasyTeamIds);
-      if (apiRosters.length > 0) {
-        rosterTracker.loadRosters(apiRosters);
-        logger.info({ teamCount: apiRosters.length }, 'Fantasy rosters loaded from Dunkest API');
+      const result = await dunkestForRosters.getRosters(config.dunkest.fantasyTeamIds);
+      if (result.rosters.length > 0) {
+        rosterTracker.loadRosters(result.rosters, result.matchdayNumber);
+        logger.info({ teamCount: result.rosters.length, matchday: result.matchdayNumber }, 'Fantasy rosters loaded from Dunkest API');
       } else {
         rosterTracker.loadFromFile('./data/rosters.json');
         logger.info('API returned no rosters, loaded from file fallback');

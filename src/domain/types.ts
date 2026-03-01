@@ -209,10 +209,20 @@ export interface FantasyRoster {
 export interface RosteredPlayer {
   playerName: string;
   teamCode: string;
+  position?: string;
+  isCaptain?: boolean;
+  isOnFire?: boolean;
+  opponentCode?: string;
+  courtPosition?: number;
 }
 
 export interface RosterRound {
   roundNumber: number;
+  rosters: FantasyRoster[];
+}
+
+export interface RosterFetchResult {
+  matchdayNumber: number;
   rosters: FantasyRoster[];
 }
 

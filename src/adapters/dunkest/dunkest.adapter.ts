@@ -1,22 +1,16 @@
 import type { FantasyPort } from '../../ports/fantasy.port.js';
-import type { FantasyRoster, FantasyStandings } from '../../domain/types.js';
+import type { FantasyStandings, RosteredPlayer, RosterFetchResult } from '../../domain/types.js';
 import type { Logger } from '../../shared/logger.js';
 import { ApiError } from '../../shared/errors.js';
 import { withRetry } from '../../shared/retry.js';
 
-/**
- * Verified shape of the /leagues/{id}/config response.
- */
 interface LeagueConfigResponse {
   data?: {
-    current_matchday?: { id?: number };
+    current_matchday?: { id?: number; number?: number };
   };
-  current_matchday?: { id?: number };
+  current_matchday?: { id?: number; number?: number };
 }
 
-/**
- * Verified roster API response shape from /fantasy-teams/{id}/matchdays/{matchdayId}/roster
- */
 interface RosterResponse {
   data?: {
     players?: RosterPlayer[];
@@ -29,11 +23,20 @@ interface RosterPlayer {
   last_name: string;
   position?: { id: number; name: string };
   team?: { id: number; name: string; abbreviation: string };
+  opponent?: { id: number; name: string; abbreviation: string };
   quotation?: number;
   pts?: number;
   court_position?: number;
   is_captain?: boolean;
+  is_on_fire?: boolean;
   jersey?: string;
+}
+
+interface FantasyTeamsResponse {
+  data?: Array<{
+    id: number;
+    name: string;
+  }>;
 }
 
 /**
@@ -95,47 +98,53 @@ export class DunkestAdapter implements FantasyPort {
     return { roundNumber: 0, roundName: 'Unknown', isActive: false };
   }
 
-  async getRosters(teamIds: string[]): Promise<FantasyRoster[]> {
-    if (teamIds.length === 0) return [];
+  async getRosters(teamIds: string[]): Promise<RosterFetchResult> {
+    if (teamIds.length === 0) return { matchdayNumber: 0, rosters: [] };
 
-    const matchdayId = await this.fetchCurrentMatchdayId();
-    if (!matchdayId) {
-      this.logger.warn('Could not determine current matchday ID, skipping roster fetch');
-      return [];
+    const matchday = await this.fetchCurrentMatchday();
+    if (!matchday) {
+      this.logger.warn('Could not determine current matchday, skipping roster fetch');
+      return { matchdayNumber: 0, rosters: [] };
     }
 
-    this.logger.info({ matchdayId, teamCount: teamIds.length }, 'Fetching rosters from Dunkest API');
+    const teamNames = await this.fetchTeamNames();
 
-    const rosters: FantasyRoster[] = [];
+    this.logger.info(
+      { matchdayId: matchday.id, matchdayNumber: matchday.number, teamCount: teamIds.length },
+      'Fetching rosters from Dunkest API',
+    );
+
+    const rosters: import('../../domain/types.js').FantasyRoster[] = [];
     for (const teamId of teamIds) {
       try {
-        const roster = await this.fetchTeamRoster(teamId, matchdayId);
+        const teamName = teamNames.get(teamId) ?? `Team ${teamId}`;
+        const roster = await this.fetchTeamRoster(teamId, matchday.id, teamName);
         if (roster) rosters.push(roster);
       } catch (err) {
         this.logger.warn({ teamId, error: String(err) }, 'Failed to fetch roster for team');
       }
     }
 
-    return rosters;
+    return { matchdayNumber: matchday.number, rosters };
   }
 
-  private async fetchCurrentMatchdayId(): Promise<number | null> {
+  private async fetchCurrentMatchday(): Promise<{ id: number; number: number } | null> {
     try {
       const data = await this.fetchJsonPublic<LeagueConfigResponse>(
         `${this.apiBase}/leagues/10/config`,
       );
 
-      // Try multiple response shapes
-      const matchdayId = data?.data?.current_matchday?.id
-        ?? data?.current_matchday?.id
-        ?? (data as Record<string, unknown>)?.currentMatchdayId;
+      const matchday = data?.data?.current_matchday ?? data?.current_matchday;
+      const id = matchday?.id;
+      const num = matchday?.number;
 
-      if (typeof matchdayId === 'number' && matchdayId > 0) {
-        this.logger.debug({ matchdayId }, 'Current matchday ID resolved');
-        return matchdayId;
+      if (typeof id === 'number' && id > 0) {
+        const matchdayNumber = typeof num === 'number' ? num : 0;
+        this.logger.debug({ matchdayId: id, matchdayNumber }, 'Current matchday resolved');
+        return { id, number: matchdayNumber };
       }
 
-      this.logger.warn({ responseKeys: Object.keys(data ?? {}) }, 'Could not extract matchday ID from league config');
+      this.logger.warn({ responseKeys: Object.keys(data ?? {}) }, 'Could not extract matchday from league config');
       return null;
     } catch (err) {
       this.logger.warn({ error: String(err) }, 'Failed to fetch league config for matchday');
@@ -143,7 +152,31 @@ export class DunkestAdapter implements FantasyPort {
     }
   }
 
-  private async fetchTeamRoster(teamId: string, matchdayId: number): Promise<FantasyRoster | null> {
+  private async fetchTeamNames(): Promise<Map<string, string>> {
+    try {
+      const data = await this.fetchJson<FantasyTeamsResponse>(
+        `${this.apiBase}/user/fantasy-teams?league=10&game_mode=1`,
+      );
+      const map = new Map<string, string>();
+      if (data?.data && Array.isArray(data.data)) {
+        for (const team of data.data) {
+          if (team.id && team.name) {
+            map.set(String(team.id), team.name);
+          }
+        }
+      }
+      return map;
+    } catch (err) {
+      this.logger.warn({ error: String(err) }, 'Failed to fetch team names');
+      return new Map();
+    }
+  }
+
+  private async fetchTeamRoster(
+    teamId: string,
+    matchdayId: number,
+    teamName: string,
+  ): Promise<import('../../domain/types.js').FantasyRoster | null> {
     const url = `${this.apiBase}/fantasy-teams/${teamId}/matchdays/${matchdayId}/roster`;
     const data = await this.fetchJson<RosterResponse>(url);
 
@@ -152,47 +185,52 @@ export class DunkestAdapter implements FantasyPort {
       'Raw roster response structure',
     );
 
-    return this.parseRosterResponse(data, teamId);
+    return this.parseRosterResponse(data, teamName);
   }
 
-  /**
-   * Parse roster response using verified API structure.
-   */
-  private parseRosterResponse(data: unknown, teamId: string): FantasyRoster | null {
+  private parseRosterResponse(
+    data: unknown,
+    teamName: string,
+  ): import('../../domain/types.js').FantasyRoster | null {
     if (!data || typeof data !== 'object') return null;
 
     const response = data as RosterResponse;
 
     if (!response.data?.players || !Array.isArray(response.data.players)) {
       this.logger.warn(
-        { teamId, hasData: !!response.data },
+        { teamName, hasData: !!response.data },
         'Invalid roster response structure',
       );
       return null;
     }
 
-    const ownerName = `Team ${teamId}`;
     const players = response.data.players
       .map((p) => this.parsePlayer(p))
-      .filter((p): p is { playerName: string; teamCode: string } => p !== null);
+      .filter((p): p is RosteredPlayer => p !== null);
 
     if (players.length === 0) {
-      this.logger.warn({ teamId }, 'Roster response had entries but no parseable players');
+      this.logger.warn({ teamName }, 'Roster response had entries but no parseable players');
       return null;
     }
 
-    return { ownerName, players };
+    return { ownerName: teamName, players };
   }
 
-  private parsePlayer(p: RosterPlayer): { playerName: string; teamCode: string } | null {
+  private parsePlayer(p: RosterPlayer): RosteredPlayer | null {
     if (!p) return null;
 
     const playerName = `${p.last_name}, ${p.first_name}`.trim();
     if (!playerName || playerName === ',') return null;
 
-    const teamCode = p.team?.abbreviation ?? '';
-
-    return { playerName, teamCode };
+    return {
+      playerName,
+      teamCode: p.team?.abbreviation ?? '',
+      position: p.position?.name,
+      isCaptain: p.is_captain ?? false,
+      isOnFire: p.is_on_fire ?? false,
+      opponentCode: p.opponent?.abbreviation,
+      courtPosition: p.court_position,
+    };
   }
 
 

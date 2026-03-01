@@ -96,3 +96,41 @@ Bogdan evaluated hiring a DevOps engineer and **recommended against it**. Instea
 - **Container wiring:** Async `createContainer`. Prefers API when bearerToken + fantasyTeamIds configured, falls back to `data/rosters.json` on failure or empty response.
 - **Key files:** config.ts, fantasy.port.ts, dunkest.adapter.ts, roster-tracker.ts, container.ts, index.ts
 - **No breaking changes:** All existing tests pass unchanged (only mock update for new port method).
+
+### Dunkest API Deep Investigation & Roster Display Overhaul (2026-03-05)
+
+**Task:** Full investigation of 6 Dunkest API endpoints + fix Round 0 bug + improve /roster Telegram output.
+
+**API Findings (6 endpoints curled):**
+
+1. **`/leagues/10/config`** (public, no auth) — Returns `current_matchday: { id: 992, number: 30, num_rounds: 2 }`, `current_round: { id: 1684, number: 1 }`, full team list with logos.
+2. **`/user`** (auth) — Returns user profile: id=476181, Filip Tanic, email, country (Serbia).
+3. **`/games/7/config`** (auth) — Game config with leagues, positions (Guard/Forward/Center/Head Coach), formations, tournament types.
+4. **`/user/fantasy-teams?league=10&game_mode=1`** (auth) — User's fantasy teams: `[{ id: 1562600, name: "svinjare" }, { id: 1742696, name: "svinjare 2" }]` with pts, position, matchday info.
+5. **`/fantasy-teams/1562600/matchdays/992`** (auth) — Team details for matchday: name, credits, pts, trades, wildcards.
+6. **`/fantasy-teams/1562600/matchdays/992/roster`** (auth) — Full roster with rich player data: position, opponent, court_position (1-5 starters, 6-10 bench, 11 coach), is_captain, is_on_fire, round info.
+
+**Bugs Fixed:**
+
+1. **Round 0 bug** — `getRosters()` returned `FantasyRoster[]` without matchday context; `loadRosters()` hardcoded roundNumber=0. Now `getRosters()` returns `RosterFetchResult { matchdayNumber, rosters }` and passes matchday number from `/leagues/10/config`.
+2. **"Team 1562600" display** — Adapter now fetches team names from `/user/fantasy-teams?league=10&game_mode=1` and uses real names (e.g. "svinjare").
+
+**Improvements:**
+
+- `RosteredPlayer` type extended with: `position`, `isCaptain`, `isOnFire`, `opponentCode`, `courtPosition`
+- `RosterFetchResult` type added to `types.ts`
+- `FantasyPort.getRosters` return type changed from `FantasyRoster[]` to `RosterFetchResult`
+- `DunkestAdapter`: new `fetchTeamNames()` method, `fetchCurrentMatchday()` returns both id and number
+- `RosterTracker.getOverview()` rewritten: shows Starting Five / Bench / Coach sections, position tags (G/F/C/HC), captain ©, fire 🔥, opponent matchups
+- `RosterTracker` stores `rosterData` for display (preserves original casing), separate from `playerIndex` (lowercase for matching)
+- `formatDisplayName()` converts "LASTNAME, FIRSTNAME" → "F. Lastname" for cleaner display
+
+**Files Changed (6):**
+- `src/domain/types.ts` — Extended RosteredPlayer, added RosterFetchResult
+- `src/ports/fantasy.port.ts` — Updated getRosters return type
+- `src/adapters/dunkest/dunkest.adapter.ts` — Team names, matchday number, rich player parsing
+- `src/domain/roster-tracker.ts` — Rich display with starters/bench/coach, position tags
+- `src/container.ts` — Handle new RosterFetchResult return type
+- `tests/unit/roster-tracker.test.ts` + `tests/unit/fantasy-tracker.test.ts` — Updated assertions
+
+**Test Results:** 100 tests passing, build clean.
