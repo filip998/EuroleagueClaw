@@ -269,3 +269,40 @@ Earlier directive from session user. Reinforced via Copilot: Apply to ALL agent 
 - **Strahinja (Backend Dev):** claude-opus-4.6 — ensures high-quality type design and API integration
 - **All future work agents:** Use claude-opus-4.6 or better; never downgrade to cheaper models for cost reasons
 - **Copilot consideration:** User budget is unlimited; quality is the only measure of success
+
+---
+
+## /games Repurposed — Round Schedule & Results — Strahinja (2026-07-18)
+
+**Status:** IMPLEMENTED
+
+**Decision:** `/games` now shows all games from the current EuroLeague round instead of listing tracked games.
+
+### Rationale
+
+Filip requested round-level visibility. The old `/games` (tracked games) was redundant with `/status` which shows tracking count. Round schedule is more useful — users see finished scores and upcoming kickoff times in one view.
+
+### Implementation Details
+
+- **Rounds API:** EuroLeague `/v2/.../rounds` endpoint discovered and integrated
+- **Round Detection:** Date-range matching determines current active round
+- **Games Display:** 
+  - Finished games show final score with ✅ winner badge
+  - Upcoming games show start time in Europe/Belgrade timezone via `Intl.DateTimeFormat`
+- **New Types:** `RoundSchedule { id, number, name, games }`, `RoundGame { ... }`
+- **New Port Method:** `StatsPort.getCurrentRoundGames()`
+- **Command Router:** `/games` handler refactored to call `stats.getCurrentRoundGames()`
+
+### Impact
+
+- `/games` handler no longer calls `gameTracker.getTrackedGames()` — calls `stats.getCurrentRoundGames()` instead
+- `composeTrackedGames()` in `MessageComposer` is now unused (kept for potential future use)
+- Serbian time (Europe/Belgrade) used for upcoming game times — no new dependencies
+- EuroLeague rounds API is stable and public; no authentication required
+- All 100 tests passing, build successful
+
+### Key Decisions
+
+1. **No new dependencies** — Native `Intl.DateTimeFormat` for timezone conversion
+2. **Round detection via date ranges** — Avoids hardcoding round IDs; automatically adapts to season schedule
+3. **StatsPort boundary** — Rounds + games logic in adapter; domain only knows composed messages
