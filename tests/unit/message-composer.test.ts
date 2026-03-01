@@ -155,7 +155,7 @@ describe('MessageComposer', () => {
   });
 
   describe('composeRoundGames', () => {
-    it('should show scores and winner badge for finished games', () => {
+    it('should show scores for finished games with bold team names', () => {
       const schedule: RoundSchedule = {
         roundNumber: 30,
         roundName: 'Round 30',
@@ -167,12 +167,12 @@ describe('MessageComposer', () => {
       expect(msg).toContain('✅');
       expect(msg).toContain('93');
       expect(msg).toContain('70');
-      expect(msg).toContain('🏆');
-      // Home team won (93 > 70), winner code should be MAD
-      expect(msg).toContain('MAD');
+      // Uses bold team shortNames, not codes
+      expect(msg).toContain('*Madrid*');
+      expect(msg).toContain('*Olympiacos*');
     });
 
-    it('should show time for upcoming games', () => {
+    it('should show time for upcoming games with bold team names', () => {
       const schedule: RoundSchedule = {
         roundNumber: 31,
         roundName: 'Round 31',
@@ -186,8 +186,11 @@ describe('MessageComposer', () => {
 
       const msg = composer.composeRoundGames(schedule);
       expect(msg).toContain('vs');
-      // Games are inside code blocks
-      expect(msg).toContain('```');
+      expect(msg).toContain('*Madrid*');
+      expect(msg).toContain('*Olympiacos*');
+      expect(msg).toContain('🕐');
+      // No code blocks for games
+      expect(msg).not.toContain('```');
     });
 
     it('should return no games message for empty games array', () => {
@@ -229,12 +232,12 @@ describe('MessageComposer', () => {
       // Finished game
       expect(msg).toContain('✅');
       expect(msg).toContain('89');
-      // Upcoming game — team codes inside code block
-      expect(msg).toContain('BAR');
-      expect(msg).toContain('FNB');
+      // Upcoming game — full team names, not codes
+      expect(msg).toContain('*Barcelona*');
+      expect(msg).toContain('*Fenerbahce*');
     });
 
-    it('should use team codes inside code blocks', () => {
+    it('should use bold team shortNames without code blocks', () => {
       const schedule: RoundSchedule = {
         roundNumber: 1,
         roundName: 'Round 1',
@@ -242,11 +245,10 @@ describe('MessageComposer', () => {
       };
 
       const msg = composer.composeRoundGames(schedule);
-      // Team codes inside code block, bold round name outside
       expect(msg).toContain('*Round 1*');
-      expect(msg).toContain('MAD');
-      expect(msg).toContain('OLY');
-      expect(msg).toContain('```');
+      expect(msg).toContain('*Madrid*');
+      expect(msg).toContain('*Olympiacos*');
+      expect(msg).not.toContain('```');
     });
 
     it('should group games by date with 📆 headers', () => {
@@ -271,7 +273,7 @@ describe('MessageComposer', () => {
       expect(dateHeaders).toBeGreaterThanOrEqual(2);
     });
 
-    it('should show away team as winner when away score is higher', () => {
+    it('should show both teams for finished games regardless of score', () => {
       const schedule: RoundSchedule = {
         roundNumber: 1,
         roundName: 'Round 1',
@@ -279,12 +281,14 @@ describe('MessageComposer', () => {
       };
 
       const msg = composer.composeRoundGames(schedule);
-      // Away team (OLY) won
-      expect(msg).toContain('🏆');
-      expect(msg).toContain('OLY');
+      expect(msg).toContain('✅');
+      expect(msg).toContain('*Madrid*');
+      expect(msg).toContain('*Olympiacos*');
+      expect(msg).toContain('70');
+      expect(msg).toContain('93');
     });
 
-    it('should render finished game scores inside code blocks', () => {
+    it('should render finished game scores with MarkdownV2 formatting', () => {
       const schedule: RoundSchedule = {
         roundNumber: 30,
         roundName: 'Round 30',
@@ -292,16 +296,15 @@ describe('MessageComposer', () => {
       };
 
       const msg = composer.composeRoundGames(schedule);
-      // Extract code block content (between ``` markers)
-      const codeBlockMatch = msg.match(/```\n([\s\S]*?)\n```/);
-      expect(codeBlockMatch).not.toBeNull();
-      const inside = codeBlockMatch![1];
-      expect(inside).toContain('93');
-      expect(inside).toContain('70');
-      expect(inside).toContain('✅');
+      expect(msg).toContain('✅');
+      expect(msg).toContain('93');
+      expect(msg).toContain('70');
+      // Escaped hyphen between scores
+      expect(msg).toContain('\\-');
+      expect(msg).toContain('*Madrid*');
     });
 
-    it('should render upcoming game times inside code blocks', () => {
+    it('should render upcoming game times with bold team names', () => {
       const schedule: RoundSchedule = {
         roundNumber: 31,
         roundName: 'Round 31',
@@ -314,15 +317,14 @@ describe('MessageComposer', () => {
       };
 
       const msg = composer.composeRoundGames(schedule);
-      const codeBlockMatch = msg.match(/```\n([\s\S]*?)\n```/);
-      expect(codeBlockMatch).not.toBeNull();
-      const inside = codeBlockMatch![1];
-      expect(inside).toContain('vs');
-      expect(inside).toContain('MAD');
-      expect(inside).toContain('OLY');
+      expect(msg).toContain('⏳');
+      expect(msg).toContain('*Madrid*');
+      expect(msg).toContain('vs');
+      expect(msg).toContain('*Olympiacos*');
+      expect(msg).toContain('🕐');
     });
 
-    it('should render headers outside code blocks with MarkdownV2 formatting', () => {
+    it('should render round name with MarkdownV2 bold formatting', () => {
       const schedule: RoundSchedule = {
         roundNumber: 30,
         roundName: 'Round 30',
@@ -330,13 +332,8 @@ describe('MessageComposer', () => {
       };
 
       const msg = composer.composeRoundGames(schedule);
-      // Split by code block markers to get outside parts
-      const parts = msg.split('```');
-      const outsideText = parts.filter((_, i) => i % 2 === 0).join('');
-      // Bold round name header is outside code blocks
-      expect(outsideText).toContain('*Round 30*');
-      // Date header with 📆 is outside code blocks
-      expect(outsideText).toContain('📆');
+      expect(msg).toContain('*Round 30*');
+      expect(msg).toContain('📆');
     });
   });
 

@@ -60,8 +60,8 @@ export class MessageComposer {
 
     const sections: string[] = [];
     for (const [dateLabel, games] of gamesByDate) {
-      const lines = games.map((g) => this.formatGameCodeBlock(g));
-      sections.push(`📆 ${escapeMarkdownV2(dateLabel)}\n${codeBlock(lines.join('\n'))}`);
+      const lines = games.map((g) => this.formatGameLine(g));
+      sections.push(`📆 ${escapeMarkdownV2(dateLabel)}\n${lines.join('\n')}`);
     }
 
     return `${header}\n\n${sections.join('\n\n')}`;
@@ -100,6 +100,21 @@ export class MessageComposer {
     }).format(new Date(game.startTime));
 
     return `  ⏳ ${game.homeTeam.shortName} vs ${game.awayTeam.shortName}  🕐 ${time}`;
+  }
+
+  private formatGameLine(game: RoundGame): string {
+    if (game.status === 'finished') {
+      return `✅ ${bold(game.homeTeam.shortName)} ${game.homeScore} ${escapeMarkdownV2('-')} ${game.awayScore} ${bold(game.awayTeam.shortName)}`;
+    }
+
+    const time = new Intl.DateTimeFormat('sr-Latn', {
+      hour: '2-digit',
+      minute: '2-digit',
+      timeZone: 'Europe/Belgrade',
+      hour12: false,
+    }).format(new Date(game.startTime));
+
+    return `⏳ ${bold(game.homeTeam.shortName)} vs ${bold(game.awayTeam.shortName)} 🕐 ${escapeMarkdownV2(time)}`;
   }
 
   /** Format a game line for use inside a code block (no MarkdownV2 escaping). */

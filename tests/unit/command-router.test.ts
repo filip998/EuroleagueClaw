@@ -136,7 +136,7 @@ describe('CommandRouter', () => {
     const result = await router.handle(makeCmd('games'));
     expect(result).not.toBeNull();
     expect(result!.text).toContain('Round 30');
-    expect(result!.text).toContain('MAD');
+    expect(result!.text).toContain('*Madrid*');
   });
 
   it('should handle /status', async () => {
