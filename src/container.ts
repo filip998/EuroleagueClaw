@@ -2,9 +2,11 @@ import type { AppConfig } from './config.js';
 import type { ChatPort } from './ports/chat.port.js';
 import type { StatsPort } from './ports/stats.port.js';
 import type { StoragePort } from './ports/storage.port.js';
+import type { TvSchedulePort } from './ports/tv-schedule.port.js';
 import { TelegramAdapter } from './adapters/telegram/telegram.adapter.js';
 import { EuroLeagueAdapter } from './adapters/euroleague/euroleague.adapter.js';
 import { DunkestAdapter } from './adapters/dunkest/dunkest.adapter.js';
+import { ArenaSportAdapter } from './adapters/tv-schedule/arena-sport.adapter.js';
 import { InMemoryStorageAdapter } from './adapters/storage/in-memory.adapter.js';
 import { SQLiteAdapter } from './adapters/storage/sqlite.adapter.js';
 import { GameTracker } from './domain/game-tracker.js';
@@ -127,6 +129,9 @@ export async function createContainer(config: AppConfig): Promise<AppContainer> 
 
   const triviaService = new TriviaService(storage, logger);
 
+  // TV Schedule (optional — Arena Sport, graceful degradation)
+  const tvSchedule = new ArenaSportAdapter(logger);
+
   const commandRouter = new CommandRouter({
     gameTracker,
     messageComposer,
@@ -139,6 +144,7 @@ export async function createContainer(config: AppConfig): Promise<AppContainer> 
     fantasyTracker,
     triviaService,
     rosterTracker,
+    tvSchedule,
   });
 
   return {

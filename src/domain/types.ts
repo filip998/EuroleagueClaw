@@ -242,6 +242,7 @@ export interface RoundGame {
   startTime: string; // UTC ISO datetime
   homeScore: number;
   awayScore: number;
+  tvChannel?: string; // e.g. "ASP1" from Arena Sport schedule
 }
 
 // ─── Event Priority ───────────────────────────────────────

@@ -114,7 +114,8 @@ export class MessageComposer {
       hour12: false,
     }).format(new Date(game.startTime));
 
-    return `⏳ ${bold(game.homeTeam.shortName)} vs ${bold(game.awayTeam.shortName)}\n      🕐 ${escapeMarkdownV2(time)}`;
+    const tvTag = game.tvChannel ? ` · 📺 ${escapeMarkdownV2(game.tvChannel)}` : '';
+    return `⏳ ${bold(game.homeTeam.shortName)} vs ${bold(game.awayTeam.shortName)}\n      🕐 ${escapeMarkdownV2(time)}${tvTag}`;
   }
 
   /** Format a game line for use inside a code block (no MarkdownV2 escaping). */

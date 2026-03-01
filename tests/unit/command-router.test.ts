@@ -139,6 +139,47 @@ describe('CommandRouter', () => {
     expect(result!.text).toContain('*Madrid*');
   });
 
+  it('should enrich /games with TV channel info', async () => {
+    const mockTvSchedule = {
+      getEuroLeagueSchedule: vi.fn().mockResolvedValue([
+        { channelName: 'Arena Premium 1', channelShort: 'ASP1', date: '2025-03-06', time: '20:00', title: 'Evroliga: Madrid - Olympiacos', isLive: true },
+      ]),
+    };
+
+    (stats.getCurrentRoundGames as any).mockResolvedValue({
+      roundNumber: 30,
+      roundName: 'Round 30',
+      games: [
+        {
+          gameCode: 1,
+          homeTeam: { code: 'MAD', name: 'Real Madrid', shortName: 'Madrid' },
+          awayTeam: { code: 'OLY', name: 'Olympiacos', shortName: 'Olympiacos' },
+          status: 'scheduled',
+          startTime: '2025-03-06T19:00:00Z',
+          homeScore: 0,
+          awayScore: 0,
+        },
+      ],
+    });
+
+    const routerWithTv = new CommandRouter({
+      gameTracker,
+      messageComposer: new MessageComposer(),
+      stats,
+      throttle: new ThrottleManager({ windowSeconds: 120, maxMessagesPerMinute: 5 }, createMockLogger()),
+      logger: createMockLogger(),
+      seasonCode: 'E2025',
+      competitionCode: 'E',
+      startTime: Date.now(),
+      tvSchedule: mockTvSchedule,
+    });
+
+    const result = await routerWithTv.handle(makeCmd('games'));
+    expect(result).not.toBeNull();
+    expect(result!.text).toContain('📺');
+    expect(result!.text).toContain('ASP1');
+  });
+
   it('should handle /status', async () => {
     const result = await router.handle(makeCmd('status'));
     expect(result).not.toBeNull();

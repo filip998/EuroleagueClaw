@@ -155,3 +155,18 @@ Bogdan evaluated hiring a DevOps engineer and **recommended against it**. Instea
 - **Key design decision:** Only the four specified output methods use MarkdownV2. Live game events (`compose()`) remain plain text to avoid risk during live games — can be converted later.
 - **Files changed (4 modified, 1 created):** `src/shared/markdown-v2.ts` (new), `src/domain/message-composer.ts`, `src/domain/roster-tracker.ts`, `src/domain/command-router.ts`, `src/container.ts`.
 - **Test Results:** 100 tests passing, build clean. No test modifications needed — existing `toContain` assertions flexible enough for the formatting changes.
+
+### Arena Sport TV Schedule Integration (2026-07-18)
+- **Task:** Add TV channel info to `/games` output by scraping tvarenasport.com/tv-scheme.
+- **Architecture:** Full hexagonal pattern — new `TvSchedulePort` interface, `ArenaSportAdapter` implementation, wired via `CommandRouter` dependency injection.
+- **Port:** `src/ports/tv-schedule.port.ts` — `TvSchedulePort` with `getEuroLeagueSchedule()` returning `TvScheduleEntry[]` (channelName, channelShort, date, time, title, isLive).
+- **Adapter:** `src/adapters/tv-schedule/arena-sport.adapter.ts` — Fetches `tvarenasport.com/tv-scheme` with browser-like UA. Two parsing strategies: (1) extract `window.TV_SCHEMES` JSON variable, (2) regex-based HTML parsing fallback. Filters for EuroLeague by keywords ("evroliga", "euroleague") and known team name fragments. 1-hour cache with stale fallback on errors.
+- **Channel mapping:** Maps "Arena Premium 1" → "ASP1", "Arena Sport 1" → "AS1", etc. via `CHANNEL_SHORT_MAP` lookup.
+- **Team matching:** Fuzzy matching in `CommandRouter.matchTvEntry()` — compares TV title against game's shortName, full name, and team code (all lowercase). Date matching when both dates available.
+- **Graceful degradation:** TV enrichment wrapped in try/catch — if Arena Sport page fails, games display normally without TV info. Adapter is completely optional.
+- **Output:** Upcoming games with matched TV channel show `📺 ASP1` after the time, e.g. `⏳ *Madrid* vs *Olympiacos*\n      🕐 20:00 · 📺 ASP1`
+- **`RoundGame` type extended** with optional `tvChannel?: string` field.
+- **No new dependencies** — uses regex/string parsing only, no HTML parsing library.
+- **Files created (3):** `src/ports/tv-schedule.port.ts`, `src/adapters/tv-schedule/arena-sport.adapter.ts`, `tests/unit/arena-sport-adapter.test.ts`
+- **Files modified (4):** `src/domain/types.ts` (tvChannel field), `src/domain/command-router.ts` (enrichWithTvInfo + matchTvEntry), `src/domain/message-composer.ts` (TV tag in formatGameLine), `src/container.ts` (ArenaSportAdapter wiring)
+- **Test Results:** 175 tests passing (14 new), build clean.

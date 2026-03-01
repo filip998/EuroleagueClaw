@@ -1,10 +1,11 @@
-import type { IncomingCommand, OutgoingMessage, GameInfo } from './types.js';
+import type { IncomingCommand, OutgoingMessage, GameInfo, RoundGame } from './types.js';
 import type { GameTracker } from './game-tracker.js';
 import type { FantasyTracker } from './fantasy-tracker.js';
 import type { TriviaService } from './trivia-service.js';
 import type { RosterTracker } from './roster-tracker.js';
 import type { MessageComposer } from './message-composer.js';
 import type { StatsPort } from '../ports/stats.port.js';
+import type { TvSchedulePort, TvScheduleEntry } from '../ports/tv-schedule.port.js';
 import type { Logger } from '../shared/logger.js';
 import type { ThrottleManager } from './throttle-manager.js';
 
@@ -20,6 +21,7 @@ interface CommandRouterDeps {
   fantasyTracker?: FantasyTracker;
   triviaService?: TriviaService;
   rosterTracker?: RosterTracker;
+  tvSchedule?: TvSchedulePort;
 }
 
 type CommandFn = (cmd: IncomingCommand) => Promise<string>;
@@ -116,6 +118,7 @@ export class CommandRouter {
         this.deps.seasonCode,
         this.deps.competitionCode,
       );
+      await this.enrichWithTvInfo(schedule.games);
       return this.deps.messageComposer.composeRoundGames(schedule);
     });
 
@@ -160,6 +163,47 @@ export class CommandRouter {
         return '📋 No fantasy rosters loaded.';
       }
       return this.deps.rosterTracker.getOverview();
+    });
+  }
+
+  /** Enrich upcoming games with TV channel info from the TV schedule adapter. */
+  private async enrichWithTvInfo(games: RoundGame[]): Promise<void> {
+    if (!this.deps.tvSchedule) return;
+
+    try {
+      const tvEntries = await this.deps.tvSchedule.getEuroLeagueSchedule();
+      if (tvEntries.length === 0) return;
+
+      for (const game of games) {
+        if (game.status === 'finished') continue;
+        const matched = this.matchTvEntry(game, tvEntries);
+        if (matched) {
+          game.tvChannel = matched.channelShort;
+        }
+      }
+    } catch (err) {
+      this.deps.logger.warn({ error: String(err) }, 'TV schedule enrichment failed');
+    }
+  }
+
+  private matchTvEntry(game: RoundGame, tvEntries: TvScheduleEntry[]): TvScheduleEntry | undefined {
+    const homeLC = game.homeTeam.shortName.toLowerCase();
+    const awayLC = game.awayTeam.shortName.toLowerCase();
+    const homeName = game.homeTeam.name.toLowerCase();
+    const awayName = game.awayTeam.name.toLowerCase();
+    const homeCode = game.homeTeam.code.toLowerCase();
+    const awayCode = game.awayTeam.code.toLowerCase();
+
+    const gameDate = game.startTime.slice(0, 10); // "YYYY-MM-DD"
+
+    return tvEntries.find((tv) => {
+      // Date must match if both are available
+      if (tv.date && gameDate && tv.date !== gameDate) return false;
+
+      const titleLC = tv.title.toLowerCase();
+      const matchesHome = titleLC.includes(homeLC) || titleLC.includes(homeName) || titleLC.includes(homeCode);
+      const matchesAway = titleLC.includes(awayLC) || titleLC.includes(awayName) || titleLC.includes(awayCode);
+      return matchesHome || matchesAway;
     });
   }
 }
