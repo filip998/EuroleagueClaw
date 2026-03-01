@@ -144,3 +144,14 @@ Bogdan evaluated hiring a DevOps engineer and **recommended against it**. Instea
 - **New types:** `RoundSchedule`, `RoundGame` in `types.ts`. New `StatsPort.getCurrentRoundGames()` method.
 - **Files changed (7):** euroleague.adapter.ts, command-router.ts, message-composer.ts, types.ts, stats.port.ts, command-router.test.ts, game-tracker.test.ts
 - **Test Results:** 100 tests passing, build clean.
+
+### MarkdownV2 Formatting Implementation (2025-07-18)
+- **Task:** Convert bot output from plain text to Telegram MarkdownV2 for prettier messages.
+- **New utility:** `src/shared/markdown-v2.ts` — `escapeMarkdownV2(text)` escapes all 20 MarkdownV2 special characters (`_*[]()~\`>#+\-=|{}.!`). Helpers: `bold()`, `italic()`, `underline()`, `strikethrough()`, `inlineCode()`, `link()` — each wraps text with formatting markers and escapes inner text.
+- **MessageComposer updates:** `composeRoundGames()` uses bold team names and escaped scores/dates. `composeHelp()` uses bold command names. `composeRosterMatch()` uses bold player names and escapes descriptions/owners.
+- **RosterTracker updates:** `getOverview()` uses bold for section headers, owner names, and player names. Added `formatPlayerLineMd()` alongside existing `formatPlayerLine()`.
+- **parseMode wiring:** `CommandRouter` sets `parseMode: 'MarkdownV2'` on `help`, `start`, `games`, `roster` commands via `MARKDOWN_COMMANDS` set. `container.ts` roster match callback also sets `parseMode: 'MarkdownV2'`.
+- **Emoji handling:** Emoji characters pass through unescaped (not in the special chars set).
+- **Key design decision:** Only the four specified output methods use MarkdownV2. Live game events (`compose()`) remain plain text to avoid risk during live games — can be converted later.
+- **Files changed (4 modified, 1 created):** `src/shared/markdown-v2.ts` (new), `src/domain/message-composer.ts`, `src/domain/roster-tracker.ts`, `src/domain/command-router.ts`, `src/container.ts`.
+- **Test Results:** 100 tests passing, build clean. No test modifications needed — existing `toContain` assertions flexible enough for the formatting changes.

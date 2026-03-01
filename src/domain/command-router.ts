@@ -24,6 +24,8 @@ interface CommandRouterDeps {
 
 type CommandFn = (cmd: IncomingCommand) => Promise<string>;
 
+const MARKDOWN_COMMANDS = new Set(['help', 'start', 'games', 'roster']);
+
 export class CommandRouter {
   private readonly commands = new Map<string, CommandFn>();
   private readonly deps: CommandRouterDeps;
@@ -41,7 +43,11 @@ export class CommandRouter {
 
     try {
       const text = await handler(cmd);
-      return { chatId: cmd.chatId, text };
+      const msg: OutgoingMessage = { chatId: cmd.chatId, text };
+      if (MARKDOWN_COMMANDS.has(cmd.command)) {
+        msg.parseMode = 'MarkdownV2';
+      }
+      return msg;
     } catch (err) {
       this.deps.logger.error({ command: cmd.command, error: String(err) }, 'Command handler error');
       return { chatId: cmd.chatId, text: '❌ Something went wrong. Please try again.' };

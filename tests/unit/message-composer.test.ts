@@ -283,6 +283,61 @@ describe('MessageComposer', () => {
       expect(msg).toContain('🏆');
       expect(msg).toContain('OLY');
     });
+
+    it('should render finished game scores inside code blocks', () => {
+      const schedule: RoundSchedule = {
+        roundNumber: 30,
+        roundName: 'Round 30',
+        games: [makeRoundGame({ status: 'finished', homeScore: 93, awayScore: 70 })],
+      };
+
+      const msg = composer.composeRoundGames(schedule);
+      // Extract code block content (between ``` markers)
+      const codeBlockMatch = msg.match(/```\n([\s\S]*?)\n```/);
+      expect(codeBlockMatch).not.toBeNull();
+      const inside = codeBlockMatch![1];
+      expect(inside).toContain('93');
+      expect(inside).toContain('70');
+      expect(inside).toContain('✅');
+    });
+
+    it('should render upcoming game times inside code blocks', () => {
+      const schedule: RoundSchedule = {
+        roundNumber: 31,
+        roundName: 'Round 31',
+        games: [makeRoundGame({
+          status: 'scheduled',
+          homeScore: 0,
+          awayScore: 0,
+          startTime: '2025-03-15T19:00:00Z',
+        })],
+      };
+
+      const msg = composer.composeRoundGames(schedule);
+      const codeBlockMatch = msg.match(/```\n([\s\S]*?)\n```/);
+      expect(codeBlockMatch).not.toBeNull();
+      const inside = codeBlockMatch![1];
+      expect(inside).toContain('vs');
+      expect(inside).toContain('MAD');
+      expect(inside).toContain('OLY');
+    });
+
+    it('should render headers outside code blocks with MarkdownV2 formatting', () => {
+      const schedule: RoundSchedule = {
+        roundNumber: 30,
+        roundName: 'Round 30',
+        games: [makeRoundGame()],
+      };
+
+      const msg = composer.composeRoundGames(schedule);
+      // Split by code block markers to get outside parts
+      const parts = msg.split('```');
+      const outsideText = parts.filter((_, i) => i % 2 === 0).join('');
+      // Bold round name header is outside code blocks
+      expect(outsideText).toContain('*Round 30*');
+      // Date header with 📆 is outside code blocks
+      expect(outsideText).toContain('📆');
+    });
   });
 
   describe('composeStatus', () => {

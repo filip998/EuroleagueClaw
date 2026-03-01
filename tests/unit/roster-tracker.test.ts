@@ -251,6 +251,62 @@ describe('RosterTracker', () => {
       expect(overview).toContain('F. Campazzo');
       expect(overview).toContain('W. Tavares');
     });
+
+    it('should render player data inside code blocks', () => {
+      tracker.loadRosters([{
+        ownerName: 'Filip',
+        players: [
+          { playerName: 'CAMPAZZO, FACUNDO', teamCode: 'MAD' },
+          { playerName: 'TAVARES, WALTER', teamCode: 'MAD' },
+        ],
+      }], 10);
+
+      const overview = tracker.getOverview();
+      const codeBlockMatch = overview.match(/```\n([\s\S]*?)\n```/);
+      expect(codeBlockMatch).not.toBeNull();
+      const inside = codeBlockMatch![1];
+      expect(inside).toContain('F. Campazzo');
+      expect(inside).toContain('W. Tavares');
+      expect(inside).toContain('MAD');
+    });
+
+    it('should render roster owner header outside code blocks', () => {
+      tracker.loadRosters([{
+        ownerName: 'Filip',
+        players: [
+          { playerName: 'CAMPAZZO, FACUNDO', teamCode: 'MAD' },
+        ],
+      }], 10);
+
+      const overview = tracker.getOverview();
+      // Split by code block markers
+      const parts = overview.split('```');
+      const outsideText = parts.filter((_, i) => i % 2 === 0).join('');
+      // Bold owner name and Fantasy Rosters header are outside code blocks
+      expect(outsideText).toContain('*Filip*');
+      expect(outsideText).toContain('*Fantasy Rosters*');
+      expect(outsideText).toContain('👤');
+    });
+
+    it('should render position sections inside code blocks when court positions present', () => {
+      tracker.loadRosters([{
+        ownerName: 'Filip',
+        players: [
+          { playerName: 'CAMPAZZO, FACUNDO', teamCode: 'MAD', position: 'Guard', courtPosition: 1 },
+          { playerName: 'POIRIER, VINCENT', teamCode: 'MAD', position: 'Center', courtPosition: 6 },
+        ],
+      }], 20);
+
+      const overview = tracker.getOverview();
+      const codeBlockMatch = overview.match(/```\n([\s\S]*?)\n```/);
+      expect(codeBlockMatch).not.toBeNull();
+      const inside = codeBlockMatch![1];
+      // Section headers and players are all inside the code block
+      expect(inside).toContain('Starting Five');
+      expect(inside).toContain('Bench');
+      expect(inside).toContain('F. Campazzo');
+      expect(inside).toContain('V. Poirier');
+    });
   });
 
   describe('loadRosters', () => {

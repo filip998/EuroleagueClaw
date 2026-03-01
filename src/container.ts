@@ -111,7 +111,7 @@ export async function createContainer(config: AppConfig): Promise<AppContainer> 
         const owners = rosterTracker.matchEvent(event);
         if (owners.length > 0) {
           const text = messageComposer.composeRosterMatch(event, owners);
-          await chat.sendMessage({ chatId, text });
+          await chat.sendMessage({ chatId, text, parseMode: 'MarkdownV2' });
         }
       }
     },
