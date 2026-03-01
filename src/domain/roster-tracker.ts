@@ -108,10 +108,12 @@ export class RosterTracker {
   private formatPlayerLine(p: RosteredPlayer): string {
     const pos = p.position ? `${this.positionTag(p.position)} ` : '';
     const name = this.formatDisplayName(p.playerName);
-    const matchup = p.opponentCode ? ` vs ${p.opponentCode}` : '';
+    const matchup = p.opponentCode
+      ? (p.isHome ? ` vs ${p.opponentCode}` : ` @ ${p.opponentCode}`)
+      : '';
     const captain = p.isCaptain ? ' ©' : '';
     const fire = p.isOnFire ? ' 🔥' : '';
-    return `${pos}${name} (${p.teamCode}${matchup})${captain}${fire}`;
+    return `${pos}${name}${matchup}${captain}${fire}`;
   }
 
   private formatDisplayName(name: string): string {
@@ -138,21 +140,24 @@ export class RosterTracker {
     const e = escapeMarkdownV2;
     const pos = p.position ? `${e(this.positionTag(p.position).trim())} · ` : '';
     const name = bold(this.formatDisplayName(p.playerName));
-    const matchup = p.opponentCode ? ` vs ${p.opponentCode}` : '';
+    const matchup = p.opponentCode
+      ? (p.isHome ? ` vs ${e(p.opponentCode)}` : ` @ ${e(p.opponentCode)}`)
+      : '';
     const captain = p.isCaptain ? ' ©' : '';
     const fire = p.isOnFire ? ' 🔥' : '';
-    return `${pos}${name} ${e('(' + p.teamCode + matchup + ')')}${captain}${fire}`;
+    return `${pos}${name}${matchup}${captain}${fire}`;
   }
 
   /** Format a player line for use inside a code block (no MarkdownV2 escaping). */
   private formatPlayerCodeBlock(p: RosteredPlayer): string {
     const pos = p.position ? this.positionTag(p.position).padEnd(3) : '   ';
     const name = this.formatDisplayName(p.playerName).padEnd(14);
-    const team = p.teamCode.padEnd(4);
-    const matchup = p.opponentCode ? `vs ${p.opponentCode}` : '';
+    const matchup = p.opponentCode
+      ? (p.isHome ? `vs ${p.opponentCode}` : `@ ${p.opponentCode}`)
+      : '';
     const captain = p.isCaptain ? ' ©' : '';
     const fire = p.isOnFire ? ' 🔥' : '';
-    return `${pos}${name} ${team}${matchup}${captain}${fire}`;
+    return `${pos}${name} ${matchup}${captain}${fire}`;
   }
 
   private buildIndex(rosters: FantasyRoster[], roundNumber: number): void {

@@ -22,7 +22,7 @@ interface RosterPlayer {
   first_name: string;
   last_name: string;
   position?: { id: number; name: string };
-  team?: { id: number; name: string; abbreviation: string };
+  team?: { id: number; name: string; abbreviation: string; position?: string };
   opponent?: { id: number; name: string; abbreviation: string };
   quotation?: number;
   pts?: number;
@@ -230,6 +230,7 @@ export class DunkestAdapter implements FantasyPort {
       isOnFire: p.is_on_fire ?? false,
       opponentCode: p.opponent?.abbreviation,
       courtPosition: p.court_position,
+      isHome: p.team?.position === 'home',
     };
   }
 

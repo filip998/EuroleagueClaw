@@ -214,6 +214,7 @@ export interface RosteredPlayer {
   isOnFire?: boolean;
   opponentCode?: string;
   courtPosition?: number;
+  isHome?: boolean;
 }
 
 export interface RosterRound {
