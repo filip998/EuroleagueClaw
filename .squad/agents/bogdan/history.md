@@ -22,3 +22,13 @@
 - Config via Zod in `src/config.ts` is clean and well-structured.
 - `InMemoryStorageAdapter` serves as test double — good for testing isolation.
 - Key file paths: `src/container.ts` (DI), `src/config.ts` (config), `src/domain/types.ts` (domain model), `src/shared/errors.ts` (error hierarchy)
+
+### DevOps Evaluation (2025-07-18)
+- **Decision: No DevOps hire needed.** Deployment footprint is a single container + SQLite. Azure Container Apps handles ops concerns.
+- **CI is broken** — `squad-ci.yml` runs `node --test test/*.test.js` but project uses vitest (`npm test`). Needs fixing.
+- **CD pipeline missing** — No workflow to build Docker image → push to ACR → deploy to Azure Container Apps. ~60 lines of YAML to add.
+- **Dockerfile is solid** — Multi-stage build, Node 22 Alpine, correct native module handling for better-sqlite3.
+- **SQLite persistence** — Requires Azure Files mount to `/app/data`; documented in README but not automated.
+- **Scaling constraint** — SQLite forces `max-replicas=1`. Horizontal scaling would require replacing the storage layer first (architecture decision, not DevOps).
+- **Recommendation** — Task Strahinja with CI fix + CD workflow + one-time Azure resource setup. Bounded ~1 week effort.
+- **Squad workflows** — 10+ workflows in `.github/workflows/` are Squad tooling boilerplate (triage, heartbeat, promote, release), not project-specific CI/CD.
