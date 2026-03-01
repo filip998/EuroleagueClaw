@@ -216,3 +216,56 @@ Tested against real Dunkest API with bearer token:
 ### Key Takeaway
 
 Previous defensive parsing logic was over-engineered. The Dunkest API response format is stable and consistent. Strict TypeScript typing provides better safety and readability than runtime heuristics.
+
+---
+
+## FantasyPort.getRosters — Return Type Refactor — Strahinja (2026-03-01)
+
+**Status:** DECISION IMPLEMENTED
+
+**Verdict:** `getRosters()` now returns `RosterFetchResult { matchdayNumber: number; rosters: FantasyRoster[] }` instead of `FantasyRoster[]`.
+
+### Root Cause
+
+The "Round 0" bug in `/roster` output occurred because `RosterTracker.loadRosters()` received rosters with no matchday context. The Dunkest adapter knew the matchday number but had no way to return it alongside the rosters.
+
+### Solution
+
+Introduced `RosterFetchResult` wrapper type that bundles:
+- `matchdayNumber: number` — Current matchday from `/leagues/10/config`
+- `rosters: FantasyRoster[]` — Fetched rosters
+
+### Implementation Details
+
+- **Matchday source:** `/leagues/10/config` (public, no auth required)
+- **Team names:** Fetched from `/user/fantasy-teams` endpoint
+- **Adapter responsibility:** Compose result atomically before returning
+
+### Impact
+
+- ✅ `FantasyPort` interface updated — clear contract for all adapters
+- ✅ `RosteredPlayer` extended with `position`, `isCaptain`, `isOnFire`, `opponentCode`, `courtPosition`
+- ✅ All tests updated and passing
+- ✅ Round 0 bug resolved — output now shows correct matchday number
+
+### Type Safety
+
+The wrapper type enforces matchday presence at compile-time; no more defensive runtime checks for missing matchday.
+
+---
+
+## Premium Model Directive — Reinforced — Filip Tanic (2026-03-01)
+
+**Status:** POLICY CLARIFIED
+
+**Decision:** Always use premium/best models for all agents. Unlimited budget — price is irrelevant. Optimize exclusively for precision, code quality, and structure.
+
+### Context
+
+Earlier directive from session user. Reinforced via Copilot: Apply to ALL agent spawns, not just Scribe exceptions.
+
+### Application
+
+- **Strahinja (Backend Dev):** claude-opus-4.6 — ensures high-quality type design and API integration
+- **All future work agents:** Use claude-opus-4.6 or better; never downgrade to cheaper models for cost reasons
+- **Copilot consideration:** User budget is unlimited; quality is the only measure of success
