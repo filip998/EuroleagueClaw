@@ -69,8 +69,8 @@ export class InjuryMonitor {
     const todayBelgrade = toBelgradeDateString(now);
     const twoHoursMs = 2 * 60 * 60 * 1000;
 
-    let hasGameToday = false;
-    let withinTwoHours = false;
+    // Find the earliest unfinished game TODAY
+    let earliestGameToday: Date | null = null;
 
     for (const game of games) {
       if (game.status === 'finished') continue;
@@ -78,17 +78,22 @@ export class InjuryMonitor {
       const gameDateBelgrade = toBelgradeDateString(gameTime);
 
       if (gameDateBelgrade === todayBelgrade) {
-        hasGameToday = true;
-        const msUntilGame = gameTime.getTime() - now.getTime();
-        if (msUntilGame <= twoHoursMs && msUntilGame > -twoHoursMs) {
-          withinTwoHours = true;
-          break;
+        if (!earliestGameToday || gameTime < earliestGameToday) {
+          earliestGameToday = gameTime;
         }
       }
     }
 
-    if (withinTwoHours) return { intervalMs: INTERVAL_5MIN, mode: '5min-critical' };
-    if (hasGameToday) return { intervalMs: INTERVAL_30MIN, mode: '30min-gameday' };
+    if (earliestGameToday) {
+      const msUntilFirstGame = earliestGameToday.getTime() - now.getTime();
+      // Critical: 0–2h before FIRST game only (lineup deadline = first tip-off)
+      if (msUntilFirstGame > 0 && msUntilFirstGame <= twoHoursMs) {
+        return { intervalMs: INTERVAL_5MIN, mode: '5min-critical' };
+      }
+      // Game day but either >2h before or games already started
+      return { intervalMs: INTERVAL_30MIN, mode: '30min-gameday' };
+    }
+
     return { intervalMs: INTERVAL_12H, mode: '12h-idle' };
   }
 
