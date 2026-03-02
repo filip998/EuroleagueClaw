@@ -7,7 +7,7 @@ const ROTOWIRE_INJURIES = `${ROTOWIRE_BASE}?view=injuries`;
 const USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36';
 
-const CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
+const DEFAULT_CACHE_TTL_MS = 60 * 60 * 1000; // 1 hour
 
 interface CacheEntry {
   data: NewsEntry[];
@@ -17,8 +17,14 @@ interface CacheEntry {
 export class RotoWireAdapter implements NewsPort {
   private newsCache: CacheEntry | null = null;
   private injuryCache: CacheEntry | null = null;
+  private cacheTtlMs = DEFAULT_CACHE_TTL_MS;
 
   constructor(private readonly logger: Logger) {}
+
+  setCacheTtl(ttlMs: number): void {
+    this.cacheTtlMs = ttlMs;
+    this.logger.info({ ttlMs }, 'RotoWire cache TTL updated');
+  }
 
   async getLatestNews(): Promise<NewsEntry[]> {
     return this.fetchWithCache('news', ROTOWIRE_BASE, this.newsCache, (c) => { this.newsCache = c; });
@@ -34,7 +40,7 @@ export class RotoWireAdapter implements NewsPort {
     cache: CacheEntry | null,
     setCache: (c: CacheEntry) => void,
   ): Promise<NewsEntry[]> {
-    if (cache && Date.now() - cache.fetchedAt < CACHE_TTL_MS) {
+    if (cache && Date.now() - cache.fetchedAt < this.cacheTtlMs) {
       return cache.data;
     }
 

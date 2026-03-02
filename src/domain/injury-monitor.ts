@@ -8,6 +8,13 @@ const INTERVAL_5MIN = 5 * 60 * 1000;
 const INTERVAL_30MIN = 30 * 60 * 1000;
 const INTERVAL_12H = 12 * 60 * 60 * 1000;
 
+// Cache TTL slightly less than poll interval to ensure fresh data
+const CACHE_TTL: Record<PollingMode, number> = {
+  '5min-critical': 4 * 60 * 1000,     // 4 min
+  '30min-gameday': 25 * 60 * 1000,    // 25 min
+  '12h-idle':      60 * 60 * 1000,    // 1 hour
+};
+
 export type PollingMode = '5min-critical' | '30min-gameday' | '12h-idle';
 
 export type GetRoundGames = () => Promise<RoundGame[]>;
@@ -60,6 +67,7 @@ export class InjuryMonitor {
     }
 
     this.logger.info({ intervalMs, mode }, 'Next injury poll scheduled');
+    this.news.setCacheTtl?.(CACHE_TTL[mode]);
     this.timer = setTimeout(() => void this.checkAndReschedule(), intervalMs);
   }
 

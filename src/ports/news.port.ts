@@ -1,6 +1,7 @@
 export interface NewsPort {
   getLatestNews(): Promise<NewsEntry[]>;
   getInjuryNews(): Promise<NewsEntry[]>;
+  setCacheTtl?(ttlMs: number): void;
 }
 
 export interface NewsEntry {
