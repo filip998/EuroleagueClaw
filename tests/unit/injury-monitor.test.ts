@@ -4,6 +4,7 @@ import { MessageComposer } from '../../src/domain/message-composer.js';
 import type { NewsPort, NewsEntry } from '../../src/ports/news.port.js';
 import type { ChatPort } from '../../src/ports/chat.port.js';
 import type { Logger } from '../../src/shared/logger.js';
+import type { RoundGame } from '../../src/domain/types.js';
 
 function createMockLogger(): Logger {
   return {
@@ -198,5 +199,94 @@ describe('InjuryMonitor', () => {
     // The slice(0, 10) in check() limits to 10
     const passedEntries = composeSpy.mock.calls[0][0];
     expect(passedEntries).toHaveLength(10);
+  });
+});
+
+describe('InjuryMonitor.calculateNextInterval', () => {
+  let news: NewsPort;
+  let chat: ChatPort;
+  let composer: MessageComposer;
+  let logger: Logger;
+
+  beforeEach(() => {
+    logger = createMockLogger();
+    chat = createMockChat();
+    composer = new MessageComposer();
+    news = createMockNews([]);
+  });
+
+  function makeGame(startTime: string, status: 'scheduled' | 'live' | 'finished' = 'scheduled'): RoundGame {
+    return {
+      gameCode: 1,
+      homeTeam: { code: 'TEA', name: 'Team A', shortName: 'TEA' },
+      awayTeam: { code: 'TEB', name: 'Team B', shortName: 'TEB' },
+      status,
+      startTime,
+      homeScore: 0,
+      awayScore: 0,
+    };
+  }
+
+  it('should return 12h-idle when no games exist', () => {
+    const now = new Date('2025-07-18T10:00:00Z');
+    const monitor = new InjuryMonitor(news, chat, composer, [], logger, undefined, () => now);
+    const result = monitor.calculateNextInterval([]);
+    expect(result).toEqual({ intervalMs: 12 * 60 * 60 * 1000, mode: '12h-idle' });
+  });
+
+  it('should return 12h-idle when all games are finished', () => {
+    const now = new Date('2025-07-18T22:00:00Z');
+    const monitor = new InjuryMonitor(news, chat, composer, [], logger, undefined, () => now);
+    const result = monitor.calculateNextInterval([
+      makeGame('2025-07-18T18:00:00Z', 'finished'),
+    ]);
+    expect(result).toEqual({ intervalMs: 12 * 60 * 60 * 1000, mode: '12h-idle' });
+  });
+
+  it('should return 5min-critical when a game is within 2 hours', () => {
+    const now = new Date('2025-07-18T17:30:00Z');
+    const monitor = new InjuryMonitor(news, chat, composer, [], logger, undefined, () => now);
+    const result = monitor.calculateNextInterval([
+      makeGame('2025-07-18T19:00:00Z', 'scheduled'),
+    ]);
+    expect(result).toEqual({ intervalMs: 5 * 60 * 1000, mode: '5min-critical' });
+  });
+
+  it('should return 30min-gameday when game today but >2h away', () => {
+    const now = new Date('2025-07-18T10:00:00Z');
+    const monitor = new InjuryMonitor(news, chat, composer, [], logger, undefined, () => now);
+    const result = monitor.calculateNextInterval([
+      makeGame('2025-07-18T19:00:00Z', 'scheduled'),
+    ]);
+    expect(result).toEqual({ intervalMs: 30 * 60 * 1000, mode: '30min-gameday' });
+  });
+
+  it('should return 12h-idle when games are on a different day', () => {
+    const now = new Date('2025-07-17T10:00:00Z');
+    const monitor = new InjuryMonitor(news, chat, composer, [], logger, undefined, () => now);
+    const result = monitor.calculateNextInterval([
+      makeGame('2025-07-18T19:00:00Z', 'scheduled'),
+    ]);
+    expect(result).toEqual({ intervalMs: 12 * 60 * 60 * 1000, mode: '12h-idle' });
+  });
+
+  it('should pick 5min-critical if ANY game in round is within 2 hours', () => {
+    const now = new Date('2025-07-18T17:30:00Z');
+    const monitor = new InjuryMonitor(news, chat, composer, [], logger, undefined, () => now);
+    const result = monitor.calculateNextInterval([
+      makeGame('2025-07-19T19:00:00Z', 'scheduled'), // tomorrow
+      makeGame('2025-07-18T19:00:00Z', 'scheduled'), // today, within 2h
+    ]);
+    expect(result).toEqual({ intervalMs: 5 * 60 * 1000, mode: '5min-critical' });
+  });
+
+  it('should use Belgrade timezone for today check', () => {
+    // 23:30 UTC = 01:30 Belgrade (next day) — game at 00:30 UTC = 02:30 Belgrade (same day as "now" in Belgrade)
+    const now = new Date('2025-07-18T23:30:00Z');
+    const monitor = new InjuryMonitor(news, chat, composer, [], logger, undefined, () => now);
+    const result = monitor.calculateNextInterval([
+      makeGame('2025-07-19T00:30:00Z', 'scheduled'), // same Belgrade date (Jul 19), within 2h
+    ]);
+    expect(result).toEqual({ intervalMs: 5 * 60 * 1000, mode: '5min-critical' });
   });
 });

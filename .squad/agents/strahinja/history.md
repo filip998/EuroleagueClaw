@@ -185,3 +185,18 @@ Bogdan evaluated hiring a DevOps engineer and **recommended against it**. Instea
 - **Files created (3):** `src/ports/news.port.ts`, `src/adapters/rotowire/rotowire.adapter.ts`, `src/domain/injury-monitor.ts`
 - **Files modified (4):** `src/domain/command-router.ts` (NewsPort dep + /rotowire handler), `src/domain/message-composer.ts` (composeNews + /rotowire in help), `src/container.ts` (RotoWireAdapter + InjuryMonitor wiring), `src/index.ts` (shutdown hook)
 - **Test Results:** 174 tests passing (1 pre-existing failure in roster-tracker.test.ts unrelated to this work), build clean.
+
+### Smart Dynamic Polling for InjuryMonitor (2025-07-18)
+- **Status:** COMPLETE. 2 files modified, 1 test file updated, 214 tests passing, build clean.
+- **Problem:** InjuryMonitor polled at fixed 30-min intervals regardless of game schedule proximity.
+- **Solution:** Replaced `setInterval` with self-rescheduling `setTimeout` pattern. After each poll, `calculateNextInterval()` determines the next delay based on game proximity in Belgrade timezone.
+- **Polling rules:** ≤2h before any game → 5min (critical); game day but >2h → 30min; no games today → 12h (idle).
+- **Game schedule access:** `InjuryMonitor` now accepts optional `GetRoundGames` function (returns `RoundGame[]`). Falls back to 30min if not provided or fetch fails.
+- **Timezone handling:** `toBelgradeDateString()` uses `Intl.DateTimeFormat` via `toLocaleDateString('en-CA', { timeZone: 'Europe/Belgrade' })` — "today" is defined in Belgrade timezone.
+- **Interval window:** Games within ±2 hours trigger critical mode (covers both pre-game and in-progress scenarios).
+- **Logging:** Each reschedule logs `{ intervalMs, mode }` where mode is `'5min-critical' | '30min-gameday' | '12h-idle'`.
+- **Constructor change:** `pollIntervalMs` param removed, replaced with optional `getRoundGames` and `nowFn` (for testability). Existing callers without these args still work (backward compatible).
+- **Container wiring:** `stats.getCurrentRoundGames()` wrapped in a closure and passed to InjuryMonitor.
+- **Tests:** 7 new tests covering all interval modes, multi-game rounds, finished games, timezone edge cases.
+- **Files modified:** `src/domain/injury-monitor.ts`, `src/container.ts`, `tests/unit/injury-monitor.test.ts`
+- **Exports added:** `PollingMode` type, `GetRoundGames` type (for external use/testing).

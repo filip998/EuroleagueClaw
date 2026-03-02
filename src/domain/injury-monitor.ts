@@ -1,13 +1,20 @@
 import type { NewsPort, NewsEntry } from '../ports/news.port.js';
 import type { ChatPort } from '../ports/chat.port.js';
 import type { Logger } from '../shared/logger.js';
+import type { RoundGame } from './types.js';
 import { MessageComposer } from './message-composer.js';
 
-const DEFAULT_POLL_INTERVAL_MS = 30 * 60 * 1000; // 30 minutes
+const INTERVAL_5MIN = 5 * 60 * 1000;
+const INTERVAL_30MIN = 30 * 60 * 1000;
+const INTERVAL_12H = 12 * 60 * 60 * 1000;
+
+export type PollingMode = '5min-critical' | '30min-gameday' | '12h-idle';
+
+export type GetRoundGames = () => Promise<RoundGame[]>;
 
 export class InjuryMonitor {
   private readonly seenKeys = new Set<string>();
-  private timer: ReturnType<typeof setInterval> | null = null;
+  private timer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(
     private readonly news: NewsPort,
@@ -15,24 +22,74 @@ export class InjuryMonitor {
     private readonly composer: MessageComposer,
     private readonly chatIds: string[],
     private readonly logger: Logger,
-    private readonly pollIntervalMs: number = DEFAULT_POLL_INTERVAL_MS,
+    private readonly getRoundGames?: GetRoundGames,
+    private readonly nowFn: () => Date = () => new Date(),
   ) {}
 
   start(): void {
     if (this.timer) return;
-    this.logger.info({ intervalMs: this.pollIntervalMs }, 'Injury monitor started');
+    this.logger.info('Injury monitor started');
 
     // Initial check after a short delay (don't block startup)
-    setTimeout(() => void this.check(), 5000);
-    this.timer = setInterval(() => void this.check(), this.pollIntervalMs);
+    setTimeout(() => void this.checkAndReschedule(), 5000);
   }
 
   stop(): void {
     if (this.timer) {
-      clearInterval(this.timer);
+      clearTimeout(this.timer);
       this.timer = null;
       this.logger.info('Injury monitor stopped');
     }
+  }
+
+  private async checkAndReschedule(): Promise<void> {
+    await this.check();
+
+    let intervalMs = INTERVAL_30MIN;
+    let mode: PollingMode = '30min-gameday';
+
+    if (this.getRoundGames) {
+      try {
+        const games = await this.getRoundGames();
+        const result = this.calculateNextInterval(games);
+        intervalMs = result.intervalMs;
+        mode = result.mode;
+      } catch (err) {
+        this.logger.warn({ error: String(err) }, 'Failed to fetch round games for interval calc');
+      }
+    }
+
+    this.logger.info({ intervalMs, mode }, 'Next injury poll scheduled');
+    this.timer = setTimeout(() => void this.checkAndReschedule(), intervalMs);
+  }
+
+  /** Determine polling interval based on proximity to game times. */
+  calculateNextInterval(games: RoundGame[]): { intervalMs: number; mode: PollingMode } {
+    const now = this.nowFn();
+    const todayBelgrade = toBelgradeDateString(now);
+    const twoHoursMs = 2 * 60 * 60 * 1000;
+
+    let hasGameToday = false;
+    let withinTwoHours = false;
+
+    for (const game of games) {
+      if (game.status === 'finished') continue;
+      const gameTime = new Date(game.startTime);
+      const gameDateBelgrade = toBelgradeDateString(gameTime);
+
+      if (gameDateBelgrade === todayBelgrade) {
+        hasGameToday = true;
+        const msUntilGame = gameTime.getTime() - now.getTime();
+        if (msUntilGame <= twoHoursMs && msUntilGame > -twoHoursMs) {
+          withinTwoHours = true;
+          break;
+        }
+      }
+    }
+
+    if (withinTwoHours) return { intervalMs: INTERVAL_5MIN, mode: '5min-critical' };
+    if (hasGameToday) return { intervalMs: INTERVAL_30MIN, mode: '30min-gameday' };
+    return { intervalMs: INTERVAL_12H, mode: '12h-idle' };
   }
 
   /** Check for new injuries and notify subscribed chats. */
@@ -65,4 +122,9 @@ export class InjuryMonitor {
       this.logger.warn({ error: String(err) }, 'Injury monitor check failed');
     }
   }
+}
+
+/** Format a Date as YYYY-MM-DD in Europe/Belgrade timezone. */
+function toBelgradeDateString(date: Date): string {
+  return date.toLocaleDateString('en-CA', { timeZone: 'Europe/Belgrade' });
 }

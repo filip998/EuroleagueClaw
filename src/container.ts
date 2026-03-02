@@ -145,7 +145,11 @@ export async function createContainer(config: AppConfig): Promise<AppContainer> 
     : [];
   let injuryMonitor: InjuryMonitor | undefined;
   if (alertChatIds.length > 0) {
-    injuryMonitor = new InjuryMonitor(news, chat, messageComposer, alertChatIds, logger);
+    injuryMonitor = new InjuryMonitor(
+      news, chat, messageComposer, alertChatIds, logger,
+      () => stats.getCurrentRoundGames(config.euroleague.seasonCode, config.euroleague.competitionCode)
+        .then(schedule => schedule.games),
+    );
     injuryMonitor.start();
     logger.info({ chatCount: alertChatIds.length }, 'Injury monitor enabled');
   }
