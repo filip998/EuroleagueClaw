@@ -202,6 +202,121 @@ describe('InjuryMonitor', () => {
   });
 });
 
+describe('InjuryMonitor cache TTL sync', () => {
+  let chat: ChatPort;
+  let composer: MessageComposer;
+  let logger: Logger;
+
+  beforeEach(() => {
+    logger = createMockLogger();
+    chat = createMockChat();
+    composer = new MessageComposer();
+  });
+
+  function makeGame(startTime: string, status: 'scheduled' | 'live' | 'finished' = 'scheduled'): RoundGame {
+    return {
+      gameCode: 1,
+      homeTeam: { code: 'TEA', name: 'Team A', shortName: 'TEA' },
+      awayTeam: { code: 'TEB', name: 'Team B', shortName: 'TEB' },
+      status,
+      startTime,
+      homeScore: 0,
+      awayScore: 0,
+    };
+  }
+
+  function createNewsWithCacheTtl(entries: NewsEntry[] = []): NewsPort & { setCacheTtl: ReturnType<typeof vi.fn> } {
+    return {
+      getLatestNews: vi.fn().mockResolvedValue(entries),
+      getInjuryNews: vi.fn().mockResolvedValue(entries),
+      setCacheTtl: vi.fn(),
+    };
+  }
+
+  it('should call setCacheTtl with 4min (240000ms) in 5min-critical mode', async () => {
+    const now = new Date('2025-07-18T17:30:00Z');
+    const news = createNewsWithCacheTtl();
+    const games = [makeGame('2025-07-18T19:00:00Z', 'scheduled')]; // within 2h
+
+    const monitor = new InjuryMonitor(
+      news, chat, composer, [], logger,
+      () => Promise.resolve(games),
+      () => now,
+    );
+
+    vi.useFakeTimers();
+    monitor.start();
+    await vi.advanceTimersByTimeAsync(6000); // past the 5s initial delay
+
+    expect(news.setCacheTtl).toHaveBeenCalledWith(4 * 60 * 1000); // 240000ms
+
+    monitor.stop();
+    vi.useRealTimers();
+  });
+
+  it('should call setCacheTtl with 25min (1500000ms) in 30min-gameday mode', async () => {
+    const now = new Date('2025-07-18T10:00:00Z');
+    const news = createNewsWithCacheTtl();
+    const games = [makeGame('2025-07-18T19:00:00Z', 'scheduled')]; // game today, >2h away
+
+    const monitor = new InjuryMonitor(
+      news, chat, composer, [], logger,
+      () => Promise.resolve(games),
+      () => now,
+    );
+
+    vi.useFakeTimers();
+    monitor.start();
+    await vi.advanceTimersByTimeAsync(6000);
+
+    expect(news.setCacheTtl).toHaveBeenCalledWith(25 * 60 * 1000); // 1500000ms
+
+    monitor.stop();
+    vi.useRealTimers();
+  });
+
+  it('should call setCacheTtl with 1h (3600000ms) in 12h-idle mode', async () => {
+    const now = new Date('2025-07-17T10:00:00Z');
+    const news = createNewsWithCacheTtl();
+    const games = [makeGame('2025-07-18T19:00:00Z', 'scheduled')]; // tomorrow
+
+    const monitor = new InjuryMonitor(
+      news, chat, composer, [], logger,
+      () => Promise.resolve(games),
+      () => now,
+    );
+
+    vi.useFakeTimers();
+    monitor.start();
+    await vi.advanceTimersByTimeAsync(6000);
+
+    expect(news.setCacheTtl).toHaveBeenCalledWith(60 * 60 * 1000); // 3600000ms
+
+    monitor.stop();
+    vi.useRealTimers();
+  });
+
+  it('should not throw if setCacheTtl is not implemented on NewsPort', async () => {
+    const now = new Date('2025-07-18T10:00:00Z');
+    const news = createMockNews(); // no setCacheTtl
+    const games = [makeGame('2025-07-18T19:00:00Z', 'scheduled')];
+
+    const monitor = new InjuryMonitor(
+      news, chat, composer, [], logger,
+      () => Promise.resolve(games),
+      () => now,
+    );
+
+    vi.useFakeTimers();
+    monitor.start();
+    // Should not throw — optional chaining handles missing setCacheTtl
+    await expect(vi.advanceTimersByTimeAsync(6000)).resolves.not.toThrow();
+
+    monitor.stop();
+    vi.useRealTimers();
+  });
+});
+
 describe('InjuryMonitor.calculateNextInterval', () => {
   let news: NewsPort;
   let chat: ChatPort;

@@ -227,6 +227,90 @@ describe('RotoWireAdapter', () => {
       vi.unstubAllGlobals();
     });
 
+    it('should default to 1-hour TTL', async () => {
+      const html = buildHtml([newsBlock({ player: 'TTL Player' })]);
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        text: () => Promise.resolve(html),
+      }));
+
+      vi.useFakeTimers();
+      await adapter.getLatestNews();
+
+      // At 59 minutes, cache is still valid
+      vi.advanceTimersByTime(59 * 60 * 1000);
+      await adapter.getLatestNews();
+      expect(fetch).toHaveBeenCalledTimes(1);
+
+      // At 61 minutes, cache has expired
+      vi.advanceTimersByTime(2 * 60 * 1000);
+      await adapter.getLatestNews();
+      expect(fetch).toHaveBeenCalledTimes(2);
+
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    });
+
+    it('should respect custom TTL set via setCacheTtl()', async () => {
+      const html = buildHtml([newsBlock({ player: 'Short TTL' })]);
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        text: () => Promise.resolve(html),
+      }));
+
+      adapter.setCacheTtl(4 * 60 * 1000); // 4 min
+
+      vi.useFakeTimers();
+      await adapter.getLatestNews();
+
+      // At 3 min, cache is still valid
+      vi.advanceTimersByTime(3 * 60 * 1000);
+      await adapter.getLatestNews();
+      expect(fetch).toHaveBeenCalledTimes(1);
+
+      // At 5 min total, cache has expired
+      vi.advanceTimersByTime(2 * 60 * 1000);
+      await adapter.getLatestNews();
+      expect(fetch).toHaveBeenCalledTimes(2);
+
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    });
+
+    it('should expire cache after 25 min when setCacheTtl(25min)', async () => {
+      const html = buildHtml([newsBlock({ player: 'Med TTL' })]);
+
+      vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+        ok: true,
+        text: () => Promise.resolve(html),
+      }));
+
+      adapter.setCacheTtl(25 * 60 * 1000); // 25 min
+
+      vi.useFakeTimers();
+      await adapter.getLatestNews();
+
+      // At 24 min, still cached
+      vi.advanceTimersByTime(24 * 60 * 1000);
+      await adapter.getLatestNews();
+      expect(fetch).toHaveBeenCalledTimes(1);
+
+      // At 26 min total, expired
+      vi.advanceTimersByTime(2 * 60 * 1000);
+      await adapter.getLatestNews();
+      expect(fetch).toHaveBeenCalledTimes(2);
+
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    });
+
+    it('setCacheTtl() logs the new TTL value', () => {
+      adapter.setCacheTtl(120000);
+      expect(logger.info).toHaveBeenCalledWith({ ttlMs: 120000 }, 'RotoWire cache TTL updated');
+    });
+
     it('should return stale cache on fetch error', async () => {
       const html = buildHtml([newsBlock({ player: 'Stale Player' })]);
 
