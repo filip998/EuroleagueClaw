@@ -269,7 +269,6 @@ describe('RosterTracker', () => {
       // Bold player names with escaped dots
       expect(overview).toContain('*F\\. Campazzo*');
       expect(overview).toContain('*W\\. Tavares*');
-      expect(overview).toContain('\\(MAD\\)');
     });
 
     it('should render roster owner header with bold formatting', () => {

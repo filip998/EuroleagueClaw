@@ -1,5 +1,6 @@
 import type { GameEvent, TrackedGame, PlayByPlayEvent, RoundSchedule, RoundGame } from './types.js';
-import { escapeMarkdownV2, bold, SEPARATOR } from '../shared/markdown-v2.js';
+import type { NewsEntry } from '../ports/news.port.js';
+import { escapeMarkdownV2, bold, italic, SEPARATOR } from '../shared/markdown-v2.js';
 
 export class MessageComposer {
   private teamNames = new Map<string, { home: string; away: string }>();
@@ -139,6 +140,28 @@ export class MessageComposer {
     return `  ${home} vs  ${away} ${time}`;
   }
 
+  composeNews(entries: NewsEntry[], title: string): string {
+    if (entries.length === 0) return escapeMarkdownV2('📰 No news available.');
+
+    const header = `🗞 ${bold(title)}\n${SEPARATOR}`;
+    const items = entries.slice(0, 10).map((entry) => {
+      const emoji = entry.isInjury ? '🏥' : '📰';
+      const name = bold(entry.playerName);
+      const headline = escapeMarkdownV2(entry.headline || 'Update');
+      const injuryTag = entry.injuryType ? `${escapeMarkdownV2(entry.injuryType)} · ` : '';
+      const date = escapeMarkdownV2(entry.date);
+      const meta = italic(`${injuryTag}${date}`);
+      const truncated = entry.newsText.length > 100
+        ? `${entry.newsText.slice(0, 100)}...`
+        : entry.newsText;
+      const body = escapeMarkdownV2(truncated);
+
+      return `${emoji} ${name} — ${headline}\n  ${meta}\n  ${body}`;
+    });
+
+    return `${header}\n\n${items.join('\n\n')}`;
+  }
+
   composeSchedule(games: Array<{ homeTeam: string; awayTeam: string; startTime: string; gameCode: number }>): string {
     if (games.length === 0) return '📅 No EuroLeague games scheduled for today.';
 
@@ -174,6 +197,7 @@ export class MessageComposer {
       `▸ ${bold('/mute <m>')} ${e('— Silence updates')}`,
       `▸ ${bold('/unmute')} ${e('— Resume updates')}`,
       `▸ ${bold('/trivia')} ${e('— Random trivia')}`,
+      `▸ ${bold('/rotowire')} ${e('— EuroLeague news')}`,
       `▸ ${bold('/status')} ${e('— Bot status')}`,
     ];
 

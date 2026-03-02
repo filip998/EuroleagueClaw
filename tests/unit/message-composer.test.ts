@@ -1,6 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { MessageComposer } from '../../src/domain/message-composer.js';
 import type { GameEvent, RoundSchedule, RoundGame, TeamInfo } from '../../src/domain/types.js';
+import type { NewsEntry } from '../../src/ports/news.port.js';
 
 function makeTeam(code: string, name: string, shortName?: string): TeamInfo {
   return { code, name, shortName: shortName ?? name };
@@ -343,6 +344,94 @@ describe('MessageComposer', () => {
       const msg = composer.composeStatus(3, 3600000);
       expect(msg).toContain('Tracking: 3');
       expect(msg).toContain('1h 0m');
+    });
+  });
+
+  describe('composeNews', () => {
+    function makeNewsEntry(overrides: Partial<NewsEntry> = {}): NewsEntry {
+      return {
+        playerName: 'Nikola Jovic',
+        headline: 'Expected to start',
+        date: 'Jul 18, 2025',
+        position: 'F',
+        newsText: 'Player update text.',
+        isInjury: false,
+        ...overrides,
+      };
+    }
+
+    it('should format injury entries with 🏥 emoji', () => {
+      const entries = [makeNewsEntry({ isInjury: true, injuryType: 'Knee' })];
+      const msg = composer.composeNews(entries, 'Test Title');
+      expect(msg).toContain('🏥');
+      expect(msg).not.toContain('📰');
+    });
+
+    it('should format general news entries with 📰 emoji', () => {
+      const entries = [makeNewsEntry({ isInjury: false })];
+      const msg = composer.composeNews(entries, 'Test Title');
+      expect(msg).toContain('📰');
+      expect(msg).not.toContain('🏥');
+    });
+
+    it('should truncate long news text at 100 characters', () => {
+      const longText = 'A'.repeat(150);
+      const entries = [makeNewsEntry({ newsText: longText })];
+      const msg = composer.composeNews(entries, 'Test Title');
+      // Original 150-char text should be truncated: 100 chars + '...'
+      expect(msg).not.toContain('A'.repeat(150));
+      expect(msg).toContain('\\.\\.\\.');
+    });
+
+    it('should not truncate short news text', () => {
+      const shortText = 'Short update.';
+      const entries = [makeNewsEntry({ newsText: shortText })];
+      const msg = composer.composeNews(entries, 'Test Title');
+      expect(msg).toContain(shortText.replace(/[.]/g, '\\.'));
+      expect(msg).not.toContain('\\.\\.\\.');
+    });
+
+    it('should escape MarkdownV2 special characters in news text', () => {
+      const entries = [makeNewsEntry({ newsText: 'Player (ACL) is out - done.' })];
+      const msg = composer.composeNews(entries, 'Test Title');
+      // Parentheses and hyphens should be escaped
+      expect(msg).toContain('\\(ACL\\)');
+      expect(msg).toContain('\\-');
+    });
+
+    it('should include title header with bold formatting', () => {
+      const entries = [makeNewsEntry()];
+      const msg = composer.composeNews(entries, 'Breaking News');
+      expect(msg).toContain('*Breaking News*');
+      expect(msg).toContain('🗞');
+    });
+
+    it('should return no-news message for empty entries', () => {
+      const msg = composer.composeNews([], 'Test Title');
+      expect(msg).toContain('No news available');
+    });
+
+    it('should include player name in bold', () => {
+      const entries = [makeNewsEntry({ playerName: 'Luka Doncic' })];
+      const msg = composer.composeNews(entries, 'News');
+      expect(msg).toContain('*Luka Doncic*');
+    });
+
+    it('should include injury type in italic metadata when present', () => {
+      const entries = [makeNewsEntry({ isInjury: true, injuryType: 'Ankle' })];
+      const msg = composer.composeNews(entries, 'Injuries');
+      expect(msg).toContain('Ankle');
+    });
+
+    it('should limit displayed entries to 10', () => {
+      const entries = Array.from({ length: 15 }, (_, i) =>
+        makeNewsEntry({ playerName: `Player ${i}` }),
+      );
+      const msg = composer.composeNews(entries, 'Big List');
+      // Only first 10 should appear
+      expect(msg).toContain('Player 0');
+      expect(msg).toContain('Player 9');
+      expect(msg).not.toContain('Player 10');
     });
   });
 });

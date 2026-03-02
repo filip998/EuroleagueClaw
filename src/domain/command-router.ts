@@ -6,6 +6,7 @@ import type { RosterTracker } from './roster-tracker.js';
 import type { MessageComposer } from './message-composer.js';
 import type { StatsPort } from '../ports/stats.port.js';
 import type { TvSchedulePort, TvScheduleEntry } from '../ports/tv-schedule.port.js';
+import type { NewsPort } from '../ports/news.port.js';
 import type { Logger } from '../shared/logger.js';
 import type { ThrottleManager } from './throttle-manager.js';
 
@@ -22,11 +23,12 @@ interface CommandRouterDeps {
   triviaService?: TriviaService;
   rosterTracker?: RosterTracker;
   tvSchedule?: TvSchedulePort;
+  news?: NewsPort;
 }
 
 type CommandFn = (cmd: IncomingCommand) => Promise<string>;
 
-const MARKDOWN_COMMANDS = new Set(['help', 'start', 'games', 'roster']);
+const MARKDOWN_COMMANDS = new Set(['help', 'start', 'games', 'roster', 'rotowire']);
 
 export class CommandRouter {
   private readonly commands = new Map<string, CommandFn>();
@@ -163,6 +165,25 @@ export class CommandRouter {
         return '📋 No fantasy rosters loaded.';
       }
       return this.deps.rosterTracker.getOverview();
+    });
+
+    this.commands.set('rotowire', async (cmd) => {
+      if (!this.deps.news) {
+        return '🏗 RotoWire news is not configured.';
+      }
+
+      const isInjuries = cmd.args[0]?.toLowerCase() === 'injuries';
+
+      try {
+        const entries = isInjuries
+          ? await this.deps.news.getInjuryNews()
+          : await this.deps.news.getLatestNews();
+
+        const title = isInjuries ? 'EuroLeague Injury News' : 'EuroLeague News';
+        return this.deps.messageComposer.composeNews(entries, title);
+      } catch {
+        return '❌ Failed to fetch RotoWire news. Please try again later.';
+      }
     });
   }
 

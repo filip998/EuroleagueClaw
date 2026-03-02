@@ -34,3 +34,10 @@
 - **`composeRoundGames()` code blocks** (`tests/unit/message-composer.test.ts`): 3 new tests — finished game scores inside code blocks, upcoming game times/teams inside code blocks, headers (bold round name, 📆 dates) outside code blocks.
 - **`getOverview()` code blocks** (`tests/unit/roster-tracker.test.ts`): 3 new tests — player data inside code blocks, owner/roster headers outside code blocks, position sections (Starting Five/Bench) inside code blocks when court positions present.
 - **Total test count: 161** (up from 149). All passing. `tsc --noEmit` clean.
+
+### RotoWire Integration Tests (2025-07-18)
+- **`rotowire-adapter.test.ts`** (13 tests): `parseNews()` HTML extraction — player name, headline, date, position, injury type, news text. Edge cases: empty HTML, no blocks, missing player (skipped), player-link fallback to `news-update__player` class. `stripTags` tested with inline `<b>` tag. Caching: second call within TTL returns cached (fetch called once), separate caches for news vs injuries, stale cache returned on fetch error.
+- **`injury-monitor.test.ts`** (9 tests): New injury detection + alert dispatch, dedup via seenKeys (no re-alert), incremental detection (only new entries on second check), multi-chat broadcast, empty news = no sendMessage, alert text includes "Injury Alerts" title, graceful handling of chat.sendMessage failure and news.getInjuryNews failure, 10-entry limit via `slice(0, 10)`.
+- **`message-composer.test.ts`** composeNews section (10 new tests): 🏥 emoji for injuries, 📰 for general, truncation at 100 chars with `...`, no truncation for short text, MarkdownV2 escaping of `()` and `-`, bold title header with 🗞, empty entries returns "No news available", bold player name, injury type in italic metadata, 10-entry display limit.
+- **Key finding**: `extractField` regex uses non-greedy `[\s\S]*?` and stops at first `<\/[a-z]+>` closing tag — nested HTML tags cause content truncation. Tests written to match this actual behavior.
+- **Total test count: 207** (up from 161). All passing. `tsc --noEmit` clean.

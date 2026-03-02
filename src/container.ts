@@ -3,10 +3,12 @@ import type { ChatPort } from './ports/chat.port.js';
 import type { StatsPort } from './ports/stats.port.js';
 import type { StoragePort } from './ports/storage.port.js';
 import type { TvSchedulePort } from './ports/tv-schedule.port.js';
+import type { NewsPort } from './ports/news.port.js';
 import { TelegramAdapter } from './adapters/telegram/telegram.adapter.js';
 import { EuroLeagueAdapter } from './adapters/euroleague/euroleague.adapter.js';
 import { DunkestAdapter } from './adapters/dunkest/dunkest.adapter.js';
 import { ArenaSportAdapter } from './adapters/tv-schedule/arena-sport.adapter.js';
+import { RotoWireAdapter } from './adapters/rotowire/rotowire.adapter.js';
 import { InMemoryStorageAdapter } from './adapters/storage/in-memory.adapter.js';
 import { SQLiteAdapter } from './adapters/storage/sqlite.adapter.js';
 import { GameTracker } from './domain/game-tracker.js';
@@ -16,6 +18,7 @@ import { MessageComposer } from './domain/message-composer.js';
 import { ThrottleManager } from './domain/throttle-manager.js';
 import { TriviaService } from './domain/trivia-service.js';
 import { RosterTracker } from './domain/roster-tracker.js';
+import { InjuryMonitor } from './domain/injury-monitor.js';
 import { createLogger, type Logger } from './shared/logger.js';
 
 export interface AppContainer {
@@ -29,6 +32,7 @@ export interface AppContainer {
   messageComposer: MessageComposer;
   throttle: ThrottleManager;
   triviaService: TriviaService;
+  injuryMonitor?: InjuryMonitor;
 }
 
 export async function createContainer(config: AppConfig): Promise<AppContainer> {
@@ -132,6 +136,20 @@ export async function createContainer(config: AppConfig): Promise<AppContainer> 
   // TV Schedule (optional — Arena Sport, graceful degradation)
   const tvSchedule = new ArenaSportAdapter(logger);
 
+  // News (RotoWire — graceful degradation)
+  const news: NewsPort = new RotoWireAdapter(logger);
+
+  // Injury Monitor — proactive alerts to all allowed chats
+  const alertChatIds = config.telegram.allowedChatIds.length > 0
+    ? config.telegram.allowedChatIds
+    : [];
+  let injuryMonitor: InjuryMonitor | undefined;
+  if (alertChatIds.length > 0) {
+    injuryMonitor = new InjuryMonitor(news, chat, messageComposer, alertChatIds, logger);
+    injuryMonitor.start();
+    logger.info({ chatCount: alertChatIds.length }, 'Injury monitor enabled');
+  }
+
   const commandRouter = new CommandRouter({
     gameTracker,
     messageComposer,
@@ -145,6 +163,7 @@ export async function createContainer(config: AppConfig): Promise<AppContainer> 
     triviaService,
     rosterTracker,
     tvSchedule,
+    news,
   });
 
   return {
@@ -158,5 +177,6 @@ export async function createContainer(config: AppConfig): Promise<AppContainer> 
     messageComposer,
     throttle,
     triviaService,
+    injuryMonitor,
   };
 }

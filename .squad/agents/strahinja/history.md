@@ -170,3 +170,18 @@ Bogdan evaluated hiring a DevOps engineer and **recommended against it**. Instea
 - **Files created (3):** `src/ports/tv-schedule.port.ts`, `src/adapters/tv-schedule/arena-sport.adapter.ts`, `tests/unit/arena-sport-adapter.test.ts`
 - **Files modified (4):** `src/domain/types.ts` (tvChannel field), `src/domain/command-router.ts` (enrichWithTvInfo + matchTvEntry), `src/domain/message-composer.ts` (TV tag in formatGameLine), `src/container.ts` (ArenaSportAdapter wiring)
 - **Test Results:** 175 tests passing (14 new), build clean.
+
+### RotoWire EuroLeague News Integration (2026-07-18)
+- **Task:** Full RotoWire integration — scraper adapter, /rotowire command, proactive injury alerts.
+- **Architecture:** Full hexagonal pattern — new `NewsPort` interface, `RotoWireAdapter` implementation, `InjuryMonitor` domain service, wired via `CommandRouter` and `container.ts`.
+- **Port:** `src/ports/news.port.ts` — `NewsPort` with `getLatestNews()` and `getInjuryNews()` returning `NewsEntry[]`.
+- **Adapter:** `src/adapters/rotowire/rotowire.adapter.ts` — Fetches `rotowire.com/euro/news.php` with browser-like UA. Regex-based HTML parsing extracts player name, headline, timestamp, position, injury type, and news text. 1-hour cache (same pattern as ArenaSportAdapter). Graceful degradation — returns stale cache or [] on failure.
+- **InjuryMonitor:** `src/domain/injury-monitor.ts` — Polls injury news every 30 min. Tracks seen injuries via `Set<string>` keyed by `${playerName}-${headline}`. New injuries formatted via `composeNews()` and sent to all allowed chat IDs. Start/stop lifecycle methods.
+- **CommandRouter:** `/rotowire` (no args) shows latest 10 news items; `/rotowire injuries` shows injury-only news. Both use MarkdownV2 formatting.
+- **MessageComposer:** New `composeNews(entries, title)` method. Uses 🏥 for injuries, 📰 for general news. Truncates news text to ~100 chars. Max 10 entries. MarkdownV2 with bold player names, italic dates/injury types.
+- **Container wiring:** RotoWireAdapter instantiated unconditionally. InjuryMonitor started if `allowedChatIds` configured. Monitor stopped on graceful shutdown.
+- **Help updated:** `/rotowire` added to composeHelp() output.
+- **No new dependencies** — uses regex/string parsing only, no HTML parsing library.
+- **Files created (3):** `src/ports/news.port.ts`, `src/adapters/rotowire/rotowire.adapter.ts`, `src/domain/injury-monitor.ts`
+- **Files modified (4):** `src/domain/command-router.ts` (NewsPort dep + /rotowire handler), `src/domain/message-composer.ts` (composeNews + /rotowire in help), `src/container.ts` (RotoWireAdapter + InjuryMonitor wiring), `src/index.ts` (shutdown hook)
+- **Test Results:** 174 tests passing (1 pre-existing failure in roster-tracker.test.ts unrelated to this work), build clean.

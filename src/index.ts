@@ -10,7 +10,7 @@ const __dirname = dirname(__filename);
 async function main() {
   const config = loadConfig();
   const container = await createContainer(config);
-  const { logger, chat, storage, commandRouter, gameTracker, triviaService } = container;
+  const { logger, chat, storage, commandRouter, gameTracker, triviaService, injuryMonitor } = container;
 
   // Initialize storage
   await storage.initialize();
@@ -45,6 +45,7 @@ async function main() {
   // Graceful shutdown
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutting down...');
+    injuryMonitor?.stop();
     gameTracker.stopAll();
     await chat.stop();
     await storage.close();
