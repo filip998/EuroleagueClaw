@@ -11,6 +11,8 @@ RUN npm ci
 COPY tsconfig.json ./
 COPY src/ src/
 RUN npm run build
+# Copy non-TS files that tsc doesn't emit (SQL migrations, etc.)
+RUN cp -r src/adapters/storage/migrations dist/adapters/storage/migrations
 
 # Remove dev dependencies, keep only production deps (with compiled native modules)
 RUN npm prune --omit=dev
