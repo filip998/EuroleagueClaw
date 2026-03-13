@@ -1,4 +1,4 @@
-import type { GameEvent, TrackedGame, PlayByPlayEvent, RoundSchedule, RoundGame } from './types.js';
+import type { GameEvent, TrackedGame, PlayByPlayEvent, RoundSchedule, RoundGame, BoxScore } from './types.js';
 import type { RosterStats } from './roster-tracker.js';
 import type { NewsEntry } from '../ports/news.port.js';
 import { escapeMarkdownV2, bold, italic, SEPARATOR } from '../shared/markdown-v2.js';
@@ -201,6 +201,7 @@ export class MessageComposer {
       `▸ ${bold('/untrack <name>')} ${e('— Stop tracking a player')}`,
       `▸ ${bold('/tracked')} ${e('— List tracked players')}`,
       `▸ ${bold('/rostercheck')} ${e('— Roster debug status')}`,
+      `▸ ${bold('/pir')} ${e('— Player PIR stats')}`,
       `▸ ${bold('/mute <m>')} ${e('— Silence updates')}`,
       `▸ ${bold('/unmute')} ${e('— Resume updates')}`,
       `▸ ${bold('/trivia')} ${e('— Random trivia')}`,
@@ -216,10 +217,11 @@ export class MessageComposer {
     return `🤖 EuroleagueClaw Status\n\n  ⏱ Uptime: ${uptimeStr}\n  📊 Tracking: ${trackedCount} game(s)`;
   }
 
-  composeRosterMatch(event: PlayByPlayEvent, owners: string[]): string {
+  composeRosterMatch(event: PlayByPlayEvent, owners: string[], playerPir?: number): string {
     const emoji = this.rosterEventEmoji(event.eventType);
     const ownerList = escapeMarkdownV2(owners.join(', '));
-    return `${emoji} ${bold(event.playerName)} — ${escapeMarkdownV2(event.description)}\n📋 ${escapeMarkdownV2('On roster:')} ${ownerList}`;
+    const pirTag = playerPir !== undefined ? ` ${escapeMarkdownV2(`(PIR: ${playerPir})`)}` : '';
+    return `${emoji} ${bold(event.playerName)}${pirTag} — ${escapeMarkdownV2(event.description)}\n📋 ${escapeMarkdownV2('On roster:')} ${ownerList}`;
   }
 
   composeRosterStatus(stats: RosterStats): string {
@@ -252,6 +254,34 @@ export class MessageComposer {
     }
 
     return `${header}\n\n${lines.join('\n')}`;
+  }
+
+  composeBoxScore(boxScores: Array<{ boxScore: BoxScore; home: string; away: string; quarter?: number; clock?: string }>): string {
+    if (boxScores.length === 0) return escapeMarkdownV2('📊 No box score data available.');
+
+    const e = escapeMarkdownV2;
+    const sections: string[] = [];
+
+    for (const { boxScore, home, away, quarter, clock } of boxScores) {
+      const qInfo = quarter ? ` ${escapeMarkdownV2(`(${this.quarterName(quarter)} ${clock ?? ''})`)}` : '';
+      const header = `🏀 ${bold(home)} vs ${bold(away)}${qInfo}`;
+
+      for (const team of boxScore.teams) {
+        const teamHeader = `\n${bold(team.teamName)}`;
+        const playerLines = [...team.players]
+          .sort((a, b) => b.pir - a.pir)
+          .slice(0, 8)
+          .map((p) => {
+            const name = e(p.playerName);
+            return `  ${name} — PIR: ${bold(String(p.pir))} ${escapeMarkdownV2(`(${p.points}pts, ${p.assists}ast, ${p.rebounds}reb)`)}`;
+          });
+        sections.push(`${teamHeader}\n${playerLines.join('\n')}`);
+      }
+
+      sections.unshift(header);
+    }
+
+    return `📊 ${bold('Player Performance Index')}\n${SEPARATOR}\n\n${sections.join('\n\n')}`;
   }
 
   private rosterEventEmoji(eventType: string): string {

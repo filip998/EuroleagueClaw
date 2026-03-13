@@ -65,6 +65,39 @@ export type PlayByPlayEventType =
   | 'game_end'
   | 'unknown';
 
+// ─── Box Score Types ──────────────────────────────────────
+
+export interface BoxScorePlayer {
+  playerName: string;
+  teamCode: string;
+  jerseyNumber: string;
+  minutes: string;
+  points: number;
+  rebounds: number;
+  assists: number;
+  steals: number;
+  turnovers: number;
+  blocks: number;
+  foulsCommitted: number;
+  foulsReceived: number;
+  pir: number; // Performance Index Rating (Valuation in the API)
+  plusMinus: number;
+  isStarter: boolean;
+  isPlaying: boolean;
+}
+
+export interface BoxScore {
+  gameCode: number;
+  teams: BoxScoreTeam[];
+}
+
+export interface BoxScoreTeam {
+  teamCode: string;
+  teamName: string;
+  coach: string;
+  players: BoxScorePlayer[];
+}
+
 // ─── Domain Events (emitted by GameTracker) ───────────────
 
 export type GameEvent =

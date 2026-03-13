@@ -1,4 +1,4 @@
-import type { IncomingCommand, OutgoingMessage, GameInfo, RoundGame } from './types.js';
+import type { IncomingCommand, OutgoingMessage, GameInfo, RoundGame, BoxScore } from './types.js';
 import type { GameTracker } from './game-tracker.js';
 import type { FantasyTracker } from './fantasy-tracker.js';
 import type { TriviaService } from './trivia-service.js';
@@ -32,7 +32,7 @@ interface CommandRouterDeps {
 
 type CommandFn = (cmd: IncomingCommand) => Promise<string>;
 
-const MARKDOWN_COMMANDS = new Set(['help', 'start', 'games', 'roster', 'rostercheck', 'rotowire']);
+const MARKDOWN_COMMANDS = new Set(['help', 'start', 'games', 'roster', 'rostercheck', 'rotowire', 'pir']);
 
 export class CommandRouter {
   private readonly commands = new Map<string, CommandFn>();
@@ -294,6 +294,54 @@ export class CommandRouter {
 
       const list = players.map(p => `  ⭐ ${p}`).join('\n');
       return `📋 Custom-tracked players:\n\n${list}`;
+    });
+
+    this.commands.set('pir', async (cmd) => {
+      const games = await this.deps.gameTracker.getTrackedGames(cmd.chatId);
+      const activeGames = games.filter(g => g.status !== 'finished');
+
+      if (activeGames.length === 0) {
+        return '📊 No active games being tracked. Use /game or /trackall first.';
+      }
+
+      const query = cmd.args.join(' ').trim().toLowerCase();
+
+      const boxScoreResults: Array<{ boxScore: BoxScore; home: string; away: string; quarter?: number; clock?: string }> = [];
+
+      for (const game of activeGames) {
+        try {
+          const boxScore = await this.deps.stats.getBoxScore(game.gameCode, game.seasonCode);
+          if (!boxScore) continue;
+
+          if (query) {
+            // Filter to specific player
+            const filtered: BoxScore = {
+              gameCode: boxScore.gameCode,
+              teams: boxScore.teams.map(team => ({
+                ...team,
+                players: team.players.filter(p =>
+                  p.playerName.toLowerCase().includes(query),
+                ),
+              })).filter(team => team.players.length > 0),
+            };
+            if (filtered.teams.length > 0) {
+              boxScoreResults.push({ boxScore: filtered, home: game.homeTeam, away: game.awayTeam });
+            }
+          } else {
+            boxScoreResults.push({ boxScore, home: game.homeTeam, away: game.awayTeam });
+          }
+        } catch (err) {
+          this.deps.logger.warn({ gameCode: game.gameCode, error: String(err) }, 'Failed to fetch box score');
+        }
+      }
+
+      if (boxScoreResults.length === 0) {
+        return query
+          ? `📊 No player matching "${cmd.args.join(' ')}" found in active games.`
+          : '📊 No box score data available for tracked games.';
+      }
+
+      return this.deps.messageComposer.composeBoxScore(boxScoreResults);
     });
 
     this.commands.set('rotowire', async (cmd) => {

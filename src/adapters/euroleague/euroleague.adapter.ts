@@ -1,6 +1,6 @@
 import { Agent } from 'undici';
 import type { StatsPort } from '../../ports/stats.port.js';
-import type { GameInfo, LiveScore, PlayByPlayEvent, PlayByPlayEventType, RoundSchedule, RoundGame } from '../../domain/types.js';
+import type { BoxScore, BoxScorePlayer, BoxScoreTeam, GameInfo, LiveScore, PlayByPlayEvent, PlayByPlayEventType, RoundSchedule, RoundGame } from '../../domain/types.js';
 import type { Logger } from '../../shared/logger.js';
 import { ApiError } from '../../shared/errors.js';
 import { withRetry } from '../../shared/retry.js';
@@ -54,6 +54,9 @@ const KEEP_ALIVE_OPTS = {
 export class EuroLeagueAdapter implements StatsPort {
   private gamesCache: { data: ELGame[]; fetchedAt: number } | null = null;
   private readonly cacheTtlMs = 5 * 60 * 1000; // 5 minutes
+
+  private boxscoreCache = new Map<string, { data: BoxScore; fetchedAt: number }>();
+  private readonly boxscoreCacheTtlMs = 60 * 1000; // 60 seconds
 
   /** Keep-alive agent for the v2 API (api-live.euroleague.net) */
   private readonly v2Agent: Agent;
@@ -210,6 +213,72 @@ export class EuroLeagueAdapter implements StatsPort {
     }
 
     return events;
+  }
+
+  async getBoxScore(gameCode: number, seasonCode: string): Promise<BoxScore | null> {
+    const cacheKey = `${seasonCode}-${gameCode}`;
+    const cached = this.boxscoreCache.get(cacheKey);
+    if (cached && Date.now() - cached.fetchedAt < this.boxscoreCacheTtlMs) {
+      return cached.data;
+    }
+
+    const url = `${PBP_API_BASE}/Boxscore?gamecode=${gameCode}&seasoncode=${seasonCode}`;
+    this.logger.debug({ url }, 'Fetching Boxscore API');
+
+    try {
+      const response = await withRetry(
+        () => fetch(url, {
+          headers: { 'Accept': 'application/json' },
+          signal: AbortSignal.timeout(10000),
+          dispatcher: this.pbpAgent,
+        } as RequestInit),
+        { maxAttempts: 2, baseDelayMs: 1000, logger: this.logger },
+      );
+
+      if (!response.ok) {
+        if (response.status === 404) return null;
+        throw new ApiError(`Boxscore API returned ${response.status}`, response.status, url);
+      }
+
+      const raw = (await response.json()) as BoxscoreResponse;
+      if (!raw?.Stats?.length) return null;
+
+      const boxScore: BoxScore = {
+        gameCode,
+        teams: raw.Stats.map((team): BoxScoreTeam => ({
+          teamCode: team.PlayersStats?.[0]?.Team ?? '',
+          teamName: team.Team,
+          coach: team.Coach,
+          players: (team.PlayersStats ?? [])
+            .filter((p) => p.Player && p.Minutes !== 'DNP' && p.Minutes !== null)
+            .map((p): BoxScorePlayer => ({
+              playerName: (p.Player ?? '').trim(),
+              teamCode: (p.Team ?? '').trim(),
+              jerseyNumber: (p.Dorsal ?? '').trim(),
+              minutes: (p.Minutes ?? '0:00').trim(),
+              points: p.Points ?? 0,
+              rebounds: p.TotalRebounds ?? 0,
+              assists: p.Assistances ?? 0,
+              steals: p.Steals ?? 0,
+              turnovers: p.Turnovers ?? 0,
+              blocks: p.BlocksFavour ?? 0,
+              foulsCommitted: p.FoulsCommited ?? 0,
+              foulsReceived: p.FoulsReceived ?? 0,
+              pir: p.Valuation ?? 0,
+              plusMinus: p.Plusminus ?? 0,
+              isStarter: p.IsStarter === 1,
+              isPlaying: p.IsPlaying === 1,
+            })),
+        })),
+      };
+
+      this.boxscoreCache.set(cacheKey, { data: boxScore, fetchedAt: Date.now() });
+      return boxScore;
+    } catch (err) {
+      if (err instanceof ApiError) throw err;
+      this.logger.warn({ url, error: String(err) }, 'Boxscore API fetch error');
+      return null;
+    }
   }
 
   async getScoreboard(): Promise<LiveScore[]> {
@@ -501,4 +570,46 @@ interface PBPResponse {
   ThirdQuarter: PBPRawEvent[];
   ForthQuarter: PBPRawEvent[];
   ExtraTime: PBPRawEvent[];
+}
+
+interface BoxscoreRawPlayer {
+  Player_ID: string;
+  IsStarter: number;
+  IsPlaying: number;
+  Team: string;
+  Dorsal: string;
+  Player: string;
+  Minutes: string | null;
+  Points: number;
+  FieldGoalsMade2: number;
+  FieldGoalsAttempted2: number;
+  FieldGoalsMade3: number;
+  FieldGoalsAttempted3: number;
+  FreeThrowsMade: number;
+  FreeThrowsAttempted: number;
+  OffensiveRebounds: number;
+  DefensiveRebounds: number;
+  TotalRebounds: number;
+  Assistances: number;
+  Steals: number;
+  Turnovers: number;
+  BlocksFavour: number;
+  BlocksAgainst: number;
+  FoulsCommited: number;
+  FoulsReceived: number;
+  Valuation: number;
+  Plusminus: number;
+}
+
+interface BoxscoreRawTeam {
+  Team: string;
+  Coach: string;
+  PlayersStats: BoxscoreRawPlayer[];
+  tmr: BoxscoreRawPlayer;
+  totr: Record<string, unknown>;
+}
+
+interface BoxscoreResponse {
+  Live: boolean;
+  Stats: BoxscoreRawTeam[];
 }

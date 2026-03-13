@@ -1,4 +1,5 @@
 import type {
+  BoxScore,
   GameInfo,
   LiveScore,
   PlayByPlayEvent,
@@ -28,4 +29,7 @@ export interface StatsPort {
 
   /** Get all games for the current round */
   getCurrentRoundGames(seasonCode: string, competitionCode: string): Promise<RoundSchedule>;
+
+  /** Get box score with player stats (PIR) for a live or finished game. Returns null if unavailable. */
+  getBoxScore(gameCode: number, seasonCode: string): Promise<BoxScore | null>;
 }
