@@ -88,6 +88,31 @@ export class EuroLeagueAdapter implements StatsPort {
   }
 
   async getLiveScore(gameCode: number, seasonCode: string): Promise<LiveScore> {
+    // Try the real-time live API first (live.euroleague.net provides data during games;
+    // the v2 API only updates after games finish)
+    try {
+      const header = await this.fetchLiveHeader(gameCode, seasonCode);
+      if (header) {
+        const isLive = header.Live === true;
+        const quarter = parseInt(String(header.Quarter), 10) || 0;
+        const homeScore = parseInt(String(header.ScoreA), 10) || 0;
+        const awayScore = parseInt(String(header.ScoreB), 10) || 0;
+        const hasScores = homeScore > 0 || awayScore > 0;
+
+        return {
+          gameCode,
+          homeScore,
+          awayScore,
+          quarter,
+          clock: (header.RemainingPartialTime ?? '').trim(),
+          status: isLive ? 'live' : (hasScores ? 'finished' : 'scheduled'),
+        };
+      }
+    } catch (err) {
+      this.logger.debug({ gameCode, error: String(err) }, 'Live Header API failed, falling back to v2');
+    }
+
+    // Fallback: v2 API (works for pre-game schedules and post-game results)
     const competitionCode = seasonCode.startsWith('U') ? 'U' : 'E';
     const data = await this.fetchJson<ELGameDetail>(
       `v2/competitions/${competitionCode}/seasons/${seasonCode}/games/${gameCode}`,
@@ -106,7 +131,7 @@ export class EuroLeagueAdapter implements StatsPort {
       homeScore: game.local?.score ?? 0,
       awayScore: game.road?.score ?? 0,
       quarter,
-      clock: '', // v2 API doesn't provide live clock
+      clock: '',
       status: game.played ? 'finished' : (quarter > 0 ? 'live' : 'scheduled'),
     };
   }
@@ -333,6 +358,23 @@ export class EuroLeagueAdapter implements StatsPort {
     return 0;
   }
 
+  private async fetchLiveHeader(gameCode: number, seasonCode: string): Promise<LiveHeaderResponse | null> {
+    const url = `${PBP_API_BASE}/Header?gamecode=${gameCode}&seasoncode=${seasonCode}`;
+    this.logger.debug({ url }, 'Fetching Live Header API');
+
+    const response = await withRetry(
+      () => fetch(url, {
+        headers: { 'Accept': 'application/json' },
+        signal: AbortSignal.timeout(10000),
+        dispatcher: this.pbpAgent,
+      } as RequestInit),
+      { maxAttempts: 2, baseDelayMs: 1000, logger: this.logger },
+    );
+
+    if (!response.ok) return null;
+    return (await response.json()) as LiveHeaderResponse;
+  }
+
   private async fetchJson<T>(endpoint: string): Promise<T | null> {
     const url = `${this.baseUrl}/${endpoint}`;
     this.logger.debug({ url }, 'Fetching EuroLeague API');
@@ -417,6 +459,19 @@ interface ELRoundsResponse {
 type ELGameDetail = ELGame | { data: ELGame };
 
 // ─── PBP API response shapes ─────────────────────────
+
+interface LiveHeaderResponse {
+  Live: boolean;
+  Quarter: string;
+  ScoreA: string;
+  ScoreB: string;
+  RemainingPartialTime: string;
+  GameTime: string;
+  TeamA: string;
+  TeamB: string;
+  CodeTeamA: string;
+  CodeTeamB: string;
+}
 
 interface PBPRawEvent {
   NUMBEROFPLAY: number;
