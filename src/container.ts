@@ -65,7 +65,7 @@ export async function createContainer(config: AppConfig): Promise<AppContainer> 
     logger,
   );
 
-  // Roster tracker — prefer API, fall back to file
+  // Roster tracker — load from Dunkest API
   const rosterTracker = new RosterTracker();
   if (config.dunkest.bearerToken && config.dunkest.fantasyTeamIds.length > 0) {
     const dunkestForRosters = new DunkestAdapter(config.dunkest.apiBase, config.dunkest.bearerToken, logger);
@@ -74,18 +74,9 @@ export async function createContainer(config: AppConfig): Promise<AppContainer> 
       if (result.rosters.length > 0) {
         rosterTracker.loadRosters(result.rosters, result.matchdayNumber);
         logger.info({ teamCount: result.rosters.length, matchday: result.matchdayNumber }, 'Fantasy rosters loaded from Dunkest API');
-      } else {
-        rosterTracker.loadFromFile('./data/rosters.json');
-        logger.info('API returned no rosters, loaded from file fallback');
       }
     } catch (err) {
-      logger.warn({ error: String(err) }, 'Dunkest API roster fetch failed, falling back to file');
-      rosterTracker.loadFromFile('./data/rosters.json');
-    }
-  } else {
-    rosterTracker.loadFromFile('./data/rosters.json');
-    if (rosterTracker.isLoaded()) {
-      logger.info('Fantasy rosters loaded from file');
+      logger.warn({ error: String(err) }, 'Dunkest API roster fetch failed');
     }
   }
 

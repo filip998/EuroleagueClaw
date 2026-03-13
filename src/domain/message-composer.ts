@@ -190,6 +190,7 @@ export class MessageComposer {
       `▸ ${bold('/help')} ${e('— Show this message')}`,
       `▸ ${bold('/today')} ${e("— Today's schedule")}`,
       `▸ ${bold('/game <n>')} ${e('— Track a game')}`,
+      `▸ ${bold('/trackall')} ${e("— Track all today's games")}`,
       `▸ ${bold('/stop <n>')} ${e('— Stop tracking')}`,
       `▸ ${bold('/games')} ${e('— Round schedule')}`,
       `▸ ${bold('/fantasy')} ${e('— Fantasy overview')}`,

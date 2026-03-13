@@ -115,6 +115,33 @@ export class CommandRouter {
         : `⚠️ Game ${gameCode} is not being tracked.`;
     });
 
+    this.commands.set('trackall', async (cmd) => {
+      const games = await this.deps.stats.getTodaySchedule(
+        this.deps.seasonCode,
+        this.deps.competitionCode,
+      );
+
+      if (games.length === 0) return '📭 No EuroLeague games scheduled for today.';
+
+      const results: string[] = [];
+      for (const g of games) {
+        try {
+          const tracked = await this.deps.gameTracker.startTracking(
+            cmd.chatId,
+            g.gameCode,
+            this.deps.seasonCode,
+          );
+          this.deps.messageComposer.registerGame(g.gameCode, tracked.homeTeam, tracked.awayTeam);
+          results.push(`✅ ${tracked.homeTeam} vs ${tracked.awayTeam} (${g.gameCode})`);
+        } catch (err) {
+          this.deps.logger.warn({ gameCode: g.gameCode, error: String(err) }, 'Failed to track game');
+          results.push(`❌ ${g.homeTeam.name} vs ${g.awayTeam.name} (${g.gameCode}) — failed`);
+        }
+      }
+
+      return `🏀 Tracking all today's games:\n\n${results.join('\n')}\n\nI'll post live updates here!`;
+    });
+
     this.commands.set('games', async () => {
       const schedule = await this.deps.stats.getCurrentRoundGames(
         this.deps.seasonCode,

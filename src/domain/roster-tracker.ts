@@ -37,9 +37,38 @@ export class RosterTracker {
     }
   }
 
+  /** Load rosters from file and merge with any already-loaded rosters (e.g. from API). */
+  loadFromFileAndMerge(path: string): void {
+    try {
+      const raw = readFileSync(path, 'utf-8');
+      const data: RosterRound = JSON.parse(raw);
+
+      if (!data.rosters || !Array.isArray(data.rosters)) return;
+
+      if (this.loaded) {
+        this.mergeRosters(data.rosters);
+      } else {
+        this.rosterData = data.rosters;
+        this.buildIndex(data.rosters, data.roundNumber ?? 0);
+      }
+    } catch {
+      // File doesn't exist or is invalid — silently skip
+    }
+  }
+
   loadRosters(rosters: FantasyRoster[], matchdayNumber?: number): void {
     this.rosterData = rosters;
     this.buildIndex(rosters, matchdayNumber ?? 0);
+  }
+
+  /** Merge additional rosters (e.g. from file) without duplicating owners already loaded. */
+  mergeRosters(extra: FantasyRoster[]): void {
+    const existingOwners = new Set(this.rosterData.map((r) => r.ownerName.toLowerCase()));
+    const newRosters = extra.filter((r) => !existingOwners.has(r.ownerName.toLowerCase()));
+    if (newRosters.length === 0) return;
+
+    this.rosterData = [...this.rosterData, ...newRosters];
+    this.buildIndex(this.rosterData, this.roundNumber);
   }
 
   matchEvent(event: PlayByPlayEvent): string[] {

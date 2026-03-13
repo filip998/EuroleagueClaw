@@ -177,7 +177,8 @@ export class DunkestAdapter implements FantasyPort {
     matchdayId: number,
     teamName: string,
   ): Promise<import('../../domain/types.js').FantasyRoster | null> {
-    const url = `${this.apiBase}/fantasy-teams/${teamId}/matchdays/${matchdayId}/roster`;
+    // Use /preview endpoint — accessible for any team, not just the authenticated user's
+    const url = `${this.apiBase}/fantasy-teams/${teamId}/matchdays/${matchdayId}/roster/preview`;
     const data = await this.fetchJson<RosterResponse>(url);
 
     this.logger.debug(
