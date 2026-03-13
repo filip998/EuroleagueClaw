@@ -75,3 +75,25 @@
 - **Recommended immediate wins:** (1) Skip PBP fetch when `!rosterTracker.isLoaded()` — trivial, zero risk. (2) Reduce PBP poll frequency to 30-45s — easy, roster notifications aren't as time-critical as score updates.
 - **Pending:** Nikola probing API for ETag/conditional request support, quarter parameter, gzip, and server-side `since` filter.
 - **Full analysis:** Written to `.squad/decisions/inbox/bogdan-pbp-alternatives.md`.
+
+### Live Tracked-Player Notifications Architecture (2026-07-18)
+- **Product goal:** Whenever a tracked player does anything notable (including missed shots), post to chat instantly.
+- **Current state:** 80% of plumbing exists. PBP polling (15s) → RosterTracker matching → MessageComposer → chat. Missing: event filter too restrictive (blocks misses, turnovers, fouls), no throttling on PBP messages, no event class configuration.
+- **Polling:** Keep 15s intervals. The PBP API has no server-side filtering, no WebSocket. 15s aligns with basketball possession length (~24s). Going faster has marginal UX benefit and doubles API load.
+- **Event classes designed:** `scoring`, `playmaking`, `defensive`, `negative`, `administrative`. Default subscription: all except `administrative`. Configurable via future `/trackconfig` command.
+- **Spam control is the critical piece.** PBP roster matches currently bypass `ThrottleManager` entirely. Phase 1: wire through throttle with priority levels. Phase 2: `PlayerEventBatcher` service that batches player events into digest messages (grouped by player, flushed every 20-30s).
+- **Per-player subscriptions deferred.** Roster-based model covers the use case. Adding `/trackplayer` subscription management is unnecessary complexity.
+- **Deduplication already solved.** `lastEventId` + `sinceEventId` prevents replay. Restart-safe via SQLite persistence.
+- **Separation of score vs player updates:** Already visually distinct (📋 prefix + MarkdownV2 for roster, plain text for scores). Future option: Telegram topic threading.
+- **Phase 1 (ship first, 1-2 days):** Expand `NOTABLE_EVENT_TYPES`, wire PBP through `ThrottleManager`, add PBP event priority.
+- **Phase 2 (polish, 3-5 days):** `PlayerEventBatcher` digest service, `/trackconfig` command, event class persistence.
+- **Phase 3 (if demanded):** Per-player subscriptions, topic threading, PBP API optimization.
+- **Full recommendation:** Written to `.squad/decisions/inbox/bogdan-live-player-architecture.md`.
+
+### Code Review and Orchestration (2026-03-13)
+- **Scribe role finalized:** Merge agent output → orchestration logs + session log, consolidate decision inbox → decisions.md, deduplicate, update agent histories, commit to git.
+- **Orchestration logs created:** `2026-03-13T073916-nikola.md` and `2026-03-13T073916-bogdan.md` summarizing each agent's findings and recommendations.
+- **Session log created:** `2026-03-13T073916-live-player-updates.md` with full problem statement, latency analysis, architecture recommendation, implementation scope, and risks.
+- **Decision consolidation:** Merged 15 inbox files (nikola-live-player-updates, bogdan-live-player-architecture, nikola-pbp-api-investigation, bogdan-pbp-alternatives, strahinja-roster-live-fetch, strahinja-roster-robustness, strahinja-tv-schedule, tihomir-roster-tests, tihomir-roster-test-coverage, bogdan-src-review, copilot directives) into decisions.md with deduplication and cross-referencing.
+- **History updates:** Appended new learnings to nikola/history.md and bogdan/history.md with references to new decisions and session artifacts.
+- **Git integration:** Prepared .squad/ directory for commit with orchestration logs, session log, updated decisions.md, and agent histories.
