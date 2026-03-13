@@ -89,8 +89,10 @@ export class SQLiteAdapter implements StoragePort {
 
   async initialize(): Promise<void> {
     this.db = new Database(this.dbPath);
-    this.db.pragma('journal_mode = WAL');
+    // Use DELETE journal mode for Azure Files SMB compatibility (WAL requires shared-memory)
+    this.db.pragma('journal_mode = DELETE');
     this.db.pragma('foreign_keys = ON');
+    this.db.pragma('busy_timeout = 5000');
 
     const migrationPath = join(__dirname, 'migrations', '001_initial.sql');
     const migrationSql = readFileSync(migrationPath, 'utf-8');
