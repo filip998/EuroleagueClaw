@@ -9,11 +9,14 @@ on:
   workflow_dispatch:
 
 env:
-  # Customize these to match your Azure resource names
   RESOURCE_GROUP: euroleague-claw-rg
   CONTAINER_APP_NAME: euroleague-claw
-  CONTAINER_APP_ENV: euroleague-claw-env
+  ACR_NAME: euroleagueclawacr
   IMAGE_NAME: euroleague-claw
+
+permissions:
+  id-token: write
+  contents: read
 
 jobs:
   test:
@@ -32,23 +35,31 @@ jobs:
       - run: npm test
 
   deploy:
-    name: Build & Push to ACR
+    name: Build & Deploy
     needs: test
     runs-on: ubuntu-latest
 
     steps:
       - uses: actions/checkout@v4
 
-      - name: Login to ACR
-        uses: docker/login-action@v3
+      - name: Azure Login (OIDC)
+        uses: azure/login@v2
         with:
-          registry: ${{ secrets.REGISTRY_NAME }}.azurecr.io
-          username: ${{ secrets.REGISTRY_USERNAME }}
-          password: ${{ secrets.REGISTRY_PASSWORD }}
+          client-id: ${{ secrets.AZURE_CLIENT_ID }}
+          tenant-id: ${{ secrets.AZURE_TENANT_ID }}
+          subscription-id: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Build and push image
+      - name: Build and push to ACR
         run: |
-          IMAGE=${{ secrets.REGISTRY_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}
-          docker build -t $IMAGE:${{ github.sha }} -t $IMAGE:latest .
-          docker push $IMAGE:${{ github.sha }}
-          docker push $IMAGE:latest
+          az acr build \
+            --registry ${{ env.ACR_NAME }} \
+            --image ${{ env.IMAGE_NAME }}:${{ github.sha }} \
+            --image ${{ env.IMAGE_NAME }}:latest \
+            .
+
+      - name: Deploy to Container Apps
+        run: |
+          az containerapp update \
+            --name ${{ env.CONTAINER_APP_NAME }} \
+            --resource-group ${{ env.RESOURCE_GROUP }} \
+            --image ${{ env.ACR_NAME }}.azurecr.io/${{ env.IMAGE_NAME }}:${{ github.sha }}
