@@ -69,3 +69,12 @@
 - **`lastLoadedAt` tests** (4 tests): Null before loading, set to valid Date after loading, not set on empty rosters, updates on subsequent loads (verified via fake timers with 5s gap).
 - **`/rostercheck` command**: NOT implemented by Strahinja — tests were requested but no production code exists. Filed in decisions inbox.
 - **Total test count: 239** (42 in roster-tracker, up from 28; 14 new tests added). All 223 non-SQLite tests pass. `tsc --noEmit` clean.
+
+### Phase 1 Low-Latency Polling Tests (2026-07-18)
+- **PBP live-only guard** (`tests/unit/game-tracker.test.ts`): 10 new tests in `PBP polling — live-only guard` describe block. Verified `getPlayByPlay()` is called ONLY when `liveScore.status === 'live'` AND `onPlayByPlay` callback is provided. Negative cases for `scheduled`, `finished`, and `postponed` statuses.
+- **PBP dispatch flow**: Verified callback receives events, `lastEventId` updates to last event's ID, empty PBP returns skip dispatch and don't update `lastEventId`, PBP fetch failures are caught gracefully without disrupting game events.
+- **Multi-poll continuity**: Verified `lastEventId` from first poll is passed to `getPlayByPlay` on second poll (via `mockResolvedValueOnce` chaining and `vi.advanceTimersByTimeAsync(15000)`).
+- **Config poll interval** (`tests/unit/config.test.ts`): 4 new tests. Default `pollIntervalMs` is now 10000 (Strahinja already reduced from 15000). Minimum boundary at 5000 enforced by Zod; values below 5000 throw validation error.
+- **Keep-alive/dispatcher seam**: NOT testable yet. The `setGlobalDispatcher(new Agent({ keepAliveTimeout: 15_000 }))` call recommended in `.squad/skills/euroleague-api-latency/SKILL.md` has not been implemented in production code. Once Strahinja adds a dispatcher configuration seam (e.g., a factory function or config option), add tests that verify: (a) custom dispatcher is applied at startup, (b) `keepAliveTimeout` matches config, (c) fallback to default dispatcher when unconfigured.
+- **Test timing pattern**: `await vi.advanceTimersByTimeAsync(0)` after `startTracking()` reliably flushes the fire-and-forget `pollGame()` promise chain. All mock resolvers complete synchronously so a single flush is sufficient.
+- **Total test count: 253** (26 in game-tracker, up from 12; 4 in new config.test.ts). All 26 touched tests pass.

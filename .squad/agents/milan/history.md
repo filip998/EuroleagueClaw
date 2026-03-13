@@ -1,8 +1,8 @@
-# Milan — History
+# Milan ΓÇö History
 
 ## Project Context
-**Project:** EuroleagueClaw — TypeScript/Node.js bot for live EuroLeague basketball game updates to Telegram group chats.
-**Stack:** TypeScript (strict, ESM), Node.js ≥22, grammy, better-sqlite3, node-cron, Zod, Pino, vitest
+**Project:** EuroleagueClaw ΓÇö TypeScript/Node.js bot for live EuroLeague basketball game updates to Telegram group chats.
+**Stack:** TypeScript (strict, ESM), Node.js ΓëÑ22, grammy, better-sqlite3, node-cron, Zod, Pino, vitest
 **Architecture:** Hexagonal (Ports & Adapters) with 5 ports: ChatPort, StatsPort, FantasyPort, StoragePort, SchedulerPort
 **User:** Filip Tanic
 

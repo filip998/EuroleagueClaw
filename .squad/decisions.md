@@ -425,3 +425,424 @@ All changes are architecturally consistent, correct, and introduce no regression
 **What:** Keep PlayByPlay fetching limited to live games only while implementing lower-latency tracked-player updates.
 
 **Why:** User request — captured for team memory
+
+---
+
+## Azure Deployment Recommendation — Milan (DevOps)
+
+**Status:** RECOMMENDATION — Awaiting Filip's approval before implementation
+
+**Requested by:** Filip Tanic  
+**Context:** "Let's try deploying this to Azure, what do we need?"
+
+---
+
+## 1. Recommended Azure Architecture
+
+### Service Selection: Azure Container Apps (Consumption Plan)
+
+**Why Container Apps over alternatives:**
+
+| Option | Verdict | Reason |
+|--------|---------|--------|
+| **Azure Container Apps** | ✅ **Recommended** | Native container support, consumption-based pricing, built-in health probes, easy secret management, Azure Files volume mounts for SQLite |
+| Azure App Service (Container) | ❌ | More expensive for a single long-running bot; better suited for HTTP-serving workloads |
+| Azure Container Instances | ❌ | No built-in restart policies, no revision management, limited observability |
+| Azure VM | ❌ | Overkill ops burden for a single-container bot |
+| Azure Kubernetes Service | ❌ | Massive overkill — this is one container |
+
+### Required Azure Resources
+
+| Resource | SKU / Tier | Purpose |
+|----------|-----------|---------|
+| **Resource Group** | — | Logical container for all resources |
+| **Azure Container Registry (ACR)** | Basic ($5/mo) | Store Docker images |
+| **Azure Container Apps Environment** | Consumption | Hosts the container app |
+| **Azure Container App** | Consumption (0.25 vCPU, 0.5 Gi) | Runs the bot |
+| **Azure Files (Storage Account)** | Standard LRS | Persistent SQLite database + trivia/roster data |
+
+### Architecture Diagram
+
+```
+GitHub Actions
+    │
+    ├─► Build Docker image
+    ├─► Push to Azure Container Registry
+    └─► Deploy to Azure Container Apps
+                 │
+                 ├── Container: euroleague-claw
+                 │   ├── Port 8080 (health check)
+                 │   └── /app/data → Azure Files mount
+                 │
+                 └── Azure Files Share
+                     ├── euroleague-claw.db
+                     ├── trivia.json
+                     └── rosters.json
+```
+
+---
+
+## 2. SQLite Persistence — The Critical Challenge
+
+SQLite needs a real filesystem with POSIX locking. This is the #1 constraint for the deployment.
+
+### Solution: Azure Files SMB Mount
+
+Azure Container Apps supports mounting Azure Files shares as volumes. This gives SQLite a persistent, durable filesystem.
+
+**Configuration:**
+
+```yaml
+# In Container App template
+volumes:
+  - name: bot-data
+    storageName: botdatastorage    # linked Azure Files share
+    storageType: AzureFile
+
+containers:
+  - name: euroleague-claw
+    volumeMounts:
+      - volumeName: bot-data
+        mountPath: /app/data
+```
+
+**Important caveats:**
+- Azure Files SMB supports SQLite's locking semantics for a **single-writer** scenario (which this bot is — one container instance)
+- **Max replicas must be 1** — SQLite does not support concurrent writers from multiple containers
+- WAL mode works over Azure Files SMB (the bot already uses WAL — `.db-wal` file present)
+- Latency is slightly higher than local disk (~1-3ms per operation vs <0.1ms), but fine for this bot's write patterns
+
+**Container App scaling rule:**
+
+```json
+{
+  "minReplicas": 1,
+  "maxReplicas": 1
+}
+```
+
+### Alternative Considered: Azure Blob + SQLite VFS
+
+Libraries like `sqlite-vfs` can back SQLite with blob storage. **Rejected** — adds complexity, latency, and maintenance burden for zero benefit at this scale.
+
+### Alternative Considered: Migrate to PostgreSQL
+
+Azure Database for PostgreSQL Flexible Server would eliminate the file persistence concern. **Deferred** — adds $13+/mo cost, requires adapter rewrite, and is overkill for a bot serving a few Telegram groups. If scaling beyond 1 replica becomes necessary, this is the right path.
+
+---
+
+## 3. Environment Variables & Secrets
+
+### Full Environment Variable Surface (from `src/config.ts`)
+
+| Variable | Required | Sensitive | Default | Notes |
+|----------|----------|-----------|---------|-------|
+| `TELEGRAM_BOT_TOKEN` | ✅ Yes | 🔒 **Secret** | — | Bot authentication |
+| `TELEGRAM_ALLOWED_CHAT_IDS` | No | No | `[]` | Comma-separated chat IDs |
+| `EUROLEAGUE_SEASON_CODE` | No | No | `E2025` | |
+| `EUROLEAGUE_COMPETITION_CODE` | No | No | `E` | |
+| `EUROLEAGUE_POLL_INTERVAL_MS` | No | No | `10000` | |
+| `EUROLEAGUE_LIVE_API_BASE` | No | No | `https://api-live.euroleague.net` | |
+| `DUNKEST_API_BASE` | No | No | `https://fantaking-api.dunkest.com/api/v1` | |
+| `DUNKEST_BEARER_TOKEN` | No | 🔒 **Secret** | `''` | Fantasy API auth |
+| `DUNKEST_FANTASY_TEAM_IDS` | No | No | `[]` | Comma-separated |
+| `LOG_LEVEL` | No | No | `info` | |
+| `NODE_ENV` | No | No | `development` | Set to `production` |
+| `DATABASE_PATH` | No | No | `./data/euroleague-claw.db` | |
+| `HEALTH_PORT` | No | No | `8080` | |
+| `THROTTLE_WINDOW_SECONDS` | No | No | `120` | |
+| `THROTTLE_MAX_MESSAGES_PER_MINUTE` | No | No | `5` | |
+
+### Secrets Management Strategy
+
+**Use Container Apps built-in secrets** (not Key Vault — overkill for 2 secrets):
+
+```bash
+# Set secrets during deployment
+az containerapp secret set \
+  --name euroleague-claw \
+  --resource-group euroleague-rg \
+  --secrets telegram-bot-token="<value>" dunkest-bearer-token="<value>"
+
+# Reference in env vars
+az containerapp update \
+  --name euroleague-claw \
+  --set-env-vars \
+    TELEGRAM_BOT_TOKEN=secretref:telegram-bot-token \
+    DUNKEST_BEARER_TOKEN=secretref:dunkest-bearer-token
+```
+
+**GitHub Actions secrets** (for CI/CD pipeline):
+- `AZURE_CREDENTIALS` — Service principal JSON for `az login`
+- `TELEGRAM_BOT_TOKEN` — Passed to Container App secrets
+- `DUNKEST_BEARER_TOKEN` — Passed to Container App secrets
+
+Non-sensitive env vars are set directly on the Container App as plain environment variables.
+
+---
+
+## 4. CI/CD Pipeline — GitHub Actions
+
+### Workflow: `.github/workflows/deploy.yml`
+
+**Trigger:** Push to `main` branch  
+**Steps:**
+
+1. **Checkout** code
+2. **Install deps + lint + test** — fail fast on broken code
+3. **Login** to Azure via service principal (`azure/login@v2`)
+4. **Login** to ACR (`az acr login`)
+5. **Build & push** Docker image to ACR (tagged with commit SHA + `latest`)
+6. **Deploy** to Container Apps (`az containerapp update --image`)
+
+**Estimated pipeline time:** ~3-4 minutes
+
+### Proposed Workflow Structure
+
+```yaml
+name: Deploy to Azure
+on:
+  push:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: npm ci
+      - run: npm run lint
+      - run: npm test
+
+  deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: azure/login@v2
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - run: az acr login --name euroleagueclaw
+      - run: |
+          docker build -t euroleagueclaw.azurecr.io/euroleague-claw:${{ github.sha }} .
+          docker build -t euroleagueclaw.azurecr.io/euroleague-claw:latest .
+          docker push euroleagueclaw.azurecr.io/euroleague-claw --all-tags
+      - run: |
+          az containerapp update \
+            --name euroleague-claw \
+            --resource-group euroleague-rg \
+            --image euroleagueclaw.azurecr.io/euroleague-claw:${{ github.sha }}
+```
+
+---
+
+## 5. Estimated Monthly Azure Costs
+
+| Resource | SKU | Est. Monthly Cost |
+|----------|-----|-------------------|
+| **Container Apps** (Consumption) | 0.25 vCPU, 0.5 Gi, always-on | ~$7–12 |
+| **Azure Container Registry** | Basic | $5 |
+| **Azure Storage (Files)** | Standard LRS, <1 GB | ~$0.05 |
+| **Egress** | <5 GB/mo (API calls + Telegram) | ~$0.50 |
+| **Total** | | **~$13–18/month** |
+
+### Cost Notes
+
+- Container Apps Consumption charges per vCPU-second ($0.000024) and GiB-second ($0.000003). A single always-on container with 0.25 vCPU + 0.5 Gi runs ~$7-12/mo.
+- The bot must run 24/7 (it polls live games and listens for Telegram commands), so scale-to-zero is **not applicable**.
+- `minReplicas: 1` ensures the bot is always running.
+- Storage costs are negligible — the SQLite DB is measured in KB-to-low-MB.
+- **No free tier applies** for Container Apps consumption that's always-on. But this is still the cheapest container hosting option on Azure.
+
+### Comparison to Alternatives
+
+| Platform | Est. Monthly |
+|----------|-------------|
+| **Azure Container Apps** | **~$15** |
+| Azure App Service B1 | ~$13 |
+| Azure VM B1s | ~$8 + ops overhead |
+| Railway/Render | ~$5-7 (but less Azure integration) |
+
+---
+
+## 6. Prerequisites — What Filip Needs
+
+### One-Time Azure Setup
+
+1. **Azure Subscription** — If none exists, create one at [portal.azure.com](https://portal.azure.com). A pay-as-you-go subscription is fine.
+
+2. **Azure CLI installed** — `winget install Microsoft.AzureCLI` or [download](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli)
+
+3. **Resource Group:**
+   ```bash
+   az group create --name euroleague-rg --location westeurope
+   ```
+
+4. **Azure Container Registry:**
+   ```bash
+   az acr create --name euroleagueclaw --resource-group euroleague-rg --sku Basic --admin-enabled true
+   ```
+
+5. **Storage Account + File Share (for SQLite):**
+   ```bash
+   az storage account create --name euroleagueclawdata --resource-group euroleague-rg --sku Standard_LRS --location westeurope
+   az storage share create --name bot-data --account-name euroleagueclawdata
+   ```
+
+6. **Container Apps Environment:**
+   ```bash
+   az containerapp env create --name euroleague-env --resource-group euroleague-rg --location westeurope
+   
+   # Link storage to environment
+   az containerapp env storage set \
+     --name euroleague-env \
+     --resource-group euroleague-rg \
+     --storage-name botdatastorage \
+     --azure-file-account-name euroleagueclawdata \
+     --azure-file-account-key <storage-key> \
+     --azure-file-share-name bot-data \
+     --access-mode ReadWrite
+   ```
+
+7. **Service Principal for GitHub Actions:**
+   ```bash
+   az ad sp create-for-rbac --name "euroleague-claw-deploy" \
+     --role contributor \
+     --scopes /subscriptions/<subscription-id>/resourceGroups/euroleague-rg \
+     --json-auth
+   ```
+   → Store the JSON output as `AZURE_CREDENTIALS` in GitHub repo secrets.
+
+8. **Grant ACR pull to Container Apps:**
+   ```bash
+   az containerapp registry set \
+     --name euroleague-claw \
+     --resource-group euroleague-rg \
+     --server euroleagueclaw.azurecr.io \
+     --identity system
+   ```
+
+### GitHub Repository Secrets to Configure
+
+| Secret Name | Value |
+|-------------|-------|
+| `AZURE_CREDENTIALS` | Service principal JSON |
+| `TELEGRAM_BOT_TOKEN` | Telegram bot token |
+| `DUNKEST_BEARER_TOKEN` | Dunkest API token (if using fantasy features) |
+
+---
+
+## 7. Dockerfile Changes Needed
+
+The current Dockerfile is **mostly good**, but needs two adjustments for Azure:
+
+### Change 1: Remove build tools from production stage
+
+The production stage installs `python3 make g++` for better-sqlite3 compilation. This is fine but adds ~200MB to the image. A better approach: compile in the builder stage and copy the native module.
+
+```dockerfile
+# Stage 1: Build (includes native compilation)
+FROM node:22-alpine AS builder
+WORKDIR /app
+RUN apk add --no-cache python3 make g++
+COPY package*.json ./
+RUN npm ci
+COPY tsconfig.json ./
+COPY src/ src/
+RUN npm run build
+
+# Stage 2: Production (no build tools)
+FROM node:22-alpine
+WORKDIR /app
+COPY package*.json ./
+COPY --from=builder /app/node_modules node_modules/
+COPY --from=builder /app/dist dist/
+COPY data/ data/
+VOLUME ["/app/data"]
+EXPOSE 8080
+CMD ["node", "dist/index.js"]
+```
+
+**Benefits:** Image drops from ~350MB to ~150MB. Faster pull times in CI/CD. Smaller attack surface.
+
+### Change 2: Add health check instruction (optional, nice-to-have)
+
+```dockerfile
+HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
+  CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
+```
+
+Container Apps has its own health probes, so this is mainly for local Docker usage.
+
+### No Other Changes Needed
+
+- Port 8080 exposure is correct ✅
+- Volume mount point `/app/data` matches `DATABASE_PATH` default ✅
+- Node 22 Alpine is a good base ✅
+- `COPY data/ data/` seeds trivia.json correctly ✅
+
+---
+
+## 8. Health Check Configuration on Azure
+
+Container Apps supports HTTP health probes natively:
+
+```json
+{
+  "probes": [
+    {
+      "type": "liveness",
+      "httpGet": {
+        "path": "/health",
+        "port": 8080
+      },
+      "periodSeconds": 30,
+      "failureThreshold": 3
+    },
+    {
+      "type": "startup",
+      "httpGet": {
+        "path": "/health",
+        "port": 8080
+      },
+      "periodSeconds": 10,
+      "failureThreshold": 5
+    }
+  ]
+}
+```
+
+The existing `/health` endpoint returns `{"status":"ok","uptime":...,"trackedGames":...}` which is perfect for Azure probes.
+
+---
+
+## 9. Risk Assessment
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|-----------|--------|------------|
+| SQLite corruption on Azure Files | Low | High | WAL mode + single replica + Azure Files snapshot backups |
+| Container restart loses in-flight game state | Medium | Medium | `resumeAll()` on startup already handles this ✅ |
+| Azure Files latency spikes | Low | Low | Bot's DB operations are infrequent (game events, not high-throughput) |
+| Secrets leak in CI logs | Low | High | Use GitHub Actions secrets + mask in logs |
+| ACR image pull failures | Low | Medium | Retry policy on Container Apps deployment |
+
+---
+
+## 10. Recommended Implementation Order
+
+1. **Set up Azure resources** (Resource Group, ACR, Storage, Container Apps Environment) — ~30 min
+2. **Optimize Dockerfile** (move build tools to builder stage) — ~10 min
+3. **Create Container App** with secrets, env vars, and Azure Files mount — ~20 min
+4. **Manual first deploy** (build + push + deploy via CLI) — verify it works — ~15 min
+5. **Create GitHub Actions workflow** — automate the above — ~30 min
+6. **Test end-to-end** — push to main, verify auto-deploy — ~15 min
+
+**Total estimated setup time: ~2 hours**
+
+---
+
+## Summary
+
+Azure Container Apps on Consumption plan is the right fit: cheapest container hosting (~$15/mo), native Docker support, built-in secrets, and Azure Files mounting solves SQLite persistence. The existing Dockerfile needs only a minor optimization (move build tools to builder stage). The health check endpoint is already compatible with Azure probes. One GitHub Actions workflow handles the full CI/CD pipeline.

@@ -48,6 +48,14 @@
 
 ### DevOps Evaluation (2025-07-18)
 - **Decision: No DevOps hire needed.** Deployment footprint is a single container + SQLite. Azure Container Apps handles ops concerns.
+
+### Azure Deployment Architecture Review (2026-03-13)
+- Milan completed comprehensive Azure deployment analysis: recommended Azure Container Apps (Consumption) + ACR Basic + Azure Files for SQLite persistence (~$15/mo)
+- **Key constraint:** SQLite requires single replica (maxReplicas: 1) due to non-concurrent-writer limitation
+- **Persistence solution:** Azure Files SMB mount at /app/data for database + trivia/roster JSON files
+- **Dockerfile optimization opportunity:** Move build tools (python3, make, g++) to builder stage; reduces final image from ~350MB to ~150MB
+- **Health check:** Existing /health endpoint compatible with Azure probes (liveness + startup)
+- **Next steps:** Await Filip's approval, then orchestrate Strahinja for Dockerfile optimization + GitHub Actions CI/CD workflow
 - **CI is broken** — `squad-ci.yml` runs `node --test test/*.test.js` but project uses vitest (`npm test`). Needs fixing.
 - **CD pipeline missing** — No workflow to build Docker image → push to ACR → deploy to Azure Container Apps. ~60 lines of YAML to add.
 - **Dockerfile is solid** — Multi-stage build, Node 22 Alpine, correct native module handling for better-sqlite3.
