@@ -314,3 +314,13 @@ See decision doc: `.squad/decisions/inbox/strahinja-low-latency-rollout.md`
 - **Verdict:** All uncommitted src/ changes approved by Bogdan (2026-07-18)
 - **Changes:** Dunkest endpoint fix + container simplification + /trackall command + help text update
 - **Follow-up items:** Dead code cleanup in roster-tracker.ts + tests for /trackall (non-blocking)
+
+### Azure Deployment Infrastructure Ready (2026-03-14 via Scribe)
+- **Milan delivered:** Optimized Dockerfile (~150MB, was 350MB), `.github/workflows/deploy.yml` (test → deploy), `scripts/azure-setup.sh` (idempotent provisioning)
+- **Architecture:** Azure Container Apps (Consumption) + ACR Basic + Azure Files for SQLite persistence (~$15/mo)
+- **Key constraint:** Single replica (maxReplicas: 1) due to SQLite non-concurrent writer limitation
+- **Env vars mapping:** All 13 config vars from `src/config.ts` mapped in Container App definition
+- **Secrets:** TELEGRAM_BOT_TOKEN + DUNKEST_BEARER_TOKEN use `secretref:` (never plain text)
+- **Health probes:** Liveness + startup on `/health:8080` — validates existing health check endpoint
+- **CI/CD blocker:** `squad-ci.yml` still runs `node --test` but project uses vitest; needs vitest fix before deploy workflow can succeed
+- **Next for Strahinja:** (1) Fix CI workflow, (2) Implement Low-Latency Polling Phase 1, (3) Run Azure setup script, (4) Push to main to trigger auto-deploy

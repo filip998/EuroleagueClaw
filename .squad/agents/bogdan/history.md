@@ -152,3 +152,10 @@
 - **Recommendations ranked:** Tier 1 (skip PBP when rosters not loaded + reduce poll frequency) validates quick wins approach
 - **Nikola's benchmark now backs strategy:** Network dominates; Tier 1 optimizations sufficient without complex API probing
 - **Next action:** Strahinja implements Tier 1 (trivial + 1 config change) for immediate 90%+ traffic reduction
+
+### Azure Deployment Infrastructure Complete (2026-03-14 via Scribe)
+- **Milan delivered:** Optimized Dockerfile (~150MB, was 350MB), GitHub Actions CI/CD workflow, idempotent Azure setup script
+- **Architecture approved:** Azure Container Apps (Consumption) + ACR Basic + Azure Files for SQLite persistence (~$15/mo)
+- **Deployment constraint:** Single replica (maxReplicas: 1) due to SQLite write limitation — noted for future scaling decisions
+- **Low-Latency Polling dependency:** Deployment infrastructure now ready; Strahinja can proceed with Phase 1 keep-alive optimization
+- **CI workflow blocker:** `squad-ci.yml` still runs wrong command (`node --test` vs `npm test`) — Strahinja to fix

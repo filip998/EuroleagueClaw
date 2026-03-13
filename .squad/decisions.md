@@ -846,3 +846,170 @@ The existing `/health` endpoint returns `{"status":"ok","uptime":...,"trackedGam
 ## Summary
 
 Azure Container Apps on Consumption plan is the right fit: cheapest container hosting (~$15/mo), native Docker support, built-in secrets, and Azure Files mounting solves SQLite persistence. The existing Dockerfile needs only a minor optimization (move build tools to builder stage). The health check endpoint is already compatible with Azure probes. One GitHub Actions workflow handles the full CI/CD pipeline.
+
+---
+
+## Azure Deployment Implementation — Milan (2026-03-14)
+
+**Status:** ✅ IMPLEMENTED
+
+**Verdict:** Full Azure production pipeline delivered. Docker image reduced from ~350MB to ~150MB. GitHub Actions CI/CD workflow and idempotent Azure provisioning script provided.
+
+### Architecture
+
+- **Azure Container Apps** (Consumption) — serverless, ~$0 when idle
+- **Azure Container Registry** (Basic) — ~$5/mo for image storage
+- **Azure Files** (Standard LRS) — ~$0.06/GB/mo for SQLite persistence via `/app/data` SMB mount
+- **Single replica** (min=max=1) — SQLite doesn't support concurrent writers
+- **Total:** ~$15/mo
+
+### Deliverables
+
+#### 1. Optimized Dockerfile
+
+**Changes:**
+- Moved build tools (`python3`, `make`, `g++`) from production stage to builder stage
+- `npm prune --omit=dev` in builder strips devDependencies before copying to production
+- Final image no longer runs `apk add` or `npm ci` — just copies pre-built artifacts
+- Added `HEALTHCHECK` instruction using `wget /health:8080`
+
+**Impact:** Final image ~150MB (was ~350MB, 57% reduction)
+
+#### 2. GitHub Actions Workflow (`.github/workflows/deploy.yml`)
+
+**Pipeline:**
+- Triggers on push to `main`
+- **Job 1 (test):** Checkout → Node 22 setup → `npm ci` → `npm run lint` → `npm test`
+- **Job 2 (deploy):** Azure login → ACR login → Docker build with SHA and latest tags → push to ACR → update Container App
+
+**Secrets required:**
+- `AZURE_CREDENTIALS` — Service principal for Azure access
+- `REGISTRY_NAME` — ACR name (e.g., `myregistry`)
+
+#### 3. Azure Setup Script (`scripts/azure-setup.sh`)
+
+**Idempotent provisioning of:**
+- Resource Group
+- Azure Container Registry (Basic tier)
+- Storage Account with File Share (for SQLite persistence)
+- Container Apps Environment (managed infrastructure)
+- Container App with:
+  - Secrets via `secretref:` (never plain text)
+  - All env vars from `src/config.ts`
+  - Azure Files volume mount at `/app/data`
+  - Liveness + startup health probes on `/health`
+  - Service principal creation + GitHub Actions secret setup instructions
+
+**Default region:** `westeurope` (configurable at top of script)
+
+### Configuration Notes
+
+- **All env vars mapped:** TELEGRAM_BOT_TOKEN, TELEGRAM_ALLOWED_CHAT_IDS, DUNKEST_BEARER_TOKEN, DUNKEST_FANTASY_TEAM_IDS, EUROLEAGUE_SEASON_CODE, EUROLEAGUE_COMPETITION_CODE, EUROLEAGUE_POLL_INTERVAL_MS, LOG_LEVEL, NODE_ENV, DATABASE_PATH, HEALTH_PORT, THROTTLE_WINDOW_SECONDS, THROTTLE_MAX_MESSAGES_PER_MINUTE
+- **Sensitive values** use Container Apps secrets with `secretref:` — TELEGRAM_BOT_TOKEN and DUNKEST_BEARER_TOKEN never stored in plain text
+- **Resource specs:** 0.25 vCPU, 0.5 Gi memory per Container App
+- **Scaling constraint:** `maxReplicas: 1` due to SQLite write limitation
+
+### Rollout Checklist
+
+1. ✅ Optimized Dockerfile (build tools → builder stage)
+2. ✅ GitHub Actions workflow (test → deploy pipeline)
+3. ✅ Azure setup script (idempotent provisioning)
+4. ⏳ Strahinja to fix CI workflow (vitest integration)
+5. ⏳ One-time Azure setup: `bash scripts/azure-setup.sh`
+6. ⏳ Push to main branch and verify auto-deploy
+
+**Estimated setup time:** ~2 hours
+
+### Related Decisions
+
+- **DevOps Non-Hire (2026-03-01)** — Recommended tasking backend dev instead
+- **Low-Latency Polling Strategy (2026-03-13)** — Depends on health endpoint and CI/CD infrastructure
+- **CI Workflow Broken** — `squad-ci.yml` runs `node --test` but project uses vitest; needs Strahinja's fix
+
+### Next Steps
+
+1. Strahinja fixes CI workflow and implements Low-Latency Polling changes
+2. Run Azure setup script to provision resources
+3. Update GitHub Actions secrets (AZURE_CREDENTIALS, REGISTRY_NAME)
+4. Push to main and verify automated deployment
+
+---
+
+## Low-Latency Polling Strategy — Bogdan & Strahinja (2026-03-13)
+
+**Status:** ARCHITECTURE + IMPLEMENTATION PLAN COMPLETE
+
+**Verdict:** Ship 5-second PBP-focused polling with warm keep-alive connections, eliminate redundant LiveScore calls from hot path, implement message batching for Telegram rate limiting.
+
+[Full content previously merged from inbox files — see session log `20260313T151146Z-live-player-updates.md` for comprehensive details]
+
+### Executive Summary
+
+Reduce game tracking notification latency from ~15s to ≤5s by:
+1. Polling PBP API every 5 seconds (instead of 10-15s)
+2. Extending HTTP keep-alive timeout from 4s to 15-60s (eliminates ~960ms TLS handshake per poll)
+3. Deriving score events from PBP data alone (removes redundant LiveScore fetch)
+4. Batching player notifications every 20-30s to prevent Telegram rate limiting
+
+### Implementation Phases
+
+**Phase 1 (Ship First — 2-3 days):**
+- Add `setGlobalDispatcher(new Agent({ keepAliveTimeout: 15_000 }))` to `src/index.ts`
+- Lower `EUROLEAGUE_POLL_INTERVAL_MS` default 15000 → 5000
+- Skip PBP fetch when `rosterTracker.isLoaded()` is false
+- Add polling latency + event delivery latency metrics to logs
+
+**Phase 2 (Polish — 3-5 days):**
+- Parallelize `getLiveScore()` + `getPlayByPlay()` via `Promise.allSettled()`
+- Derive `LiveScore` from PBP payload alone (POINTS_A/B, clock, quarter)
+- Implement `PlayerEventBatcher` service (digest messages every 20-30s)
+- Wire PBP messages through throttling with priority levels
+
+**Phase 3 (Observe & Tune — defer, 1+ week):**
+- Monitor empty-diff rate, TLS connection drops, Telegram throttling
+- Implement lightweight `/api/Header` polling gate if needed
+- Adjust intervals based on production metrics
+
+### Files to Modify (Phase 1)
+
+| File | Function/Area | Change |
+|------|--------------|--------|
+| `src/index.ts` | Top level | Add undici Agent setup (5 lines) |
+| `src/config.ts` | euroleague schema | Lower `pollIntervalMs` default 15000→5000 |
+| `src/domain/game-tracker.ts` | `pollGame()` | Skip PBP fetch when rosters not loaded |
+| All others | Logging | Add `pollLatencyMs`, `eventDeliveryLatencyMs` metrics |
+
+### Connection Reuse Strategy
+
+Create undici Agent with tuned keep-alive:
+
+```typescript
+import { setGlobalDispatcher, Agent } from 'undici';
+
+setGlobalDispatcher(new Agent({
+  keepAliveTimeout: 15_000,
+  keepAliveMaxTimeout: 30_000,
+  connections: 4,
+  pipelining: 1,
+}));
+```
+
+Applies globally to all fetch calls (`api-live.euroleague.net` and `live.euroleague.net`). Keeps connections warm → every poll takes ~56ms instead of ~960ms.
+
+### Risk Assessment
+
+| Risk | Likelihood | Impact | Mitigation |
+|------|-----------|--------|------------|
+| Cloudflare rate limiting at 5s | Low | Medium | Config is tunable; bump to 10s instantly |
+| PBP API downtime during game | Low | High | Phase 2 adds LiveScore as fallback |
+| Message spam at 5s + expanded events | Medium | Medium | PlayerEventBatcher (Phase 2) batches |
+| Keep-alive drops (CDN-side close) | Low | Low | Log cold connections; add pre-warming if needed |
+| Parallel fetch masking errors | Low | Low | `Promise.allSettled` + independent error handling |
+
+### Rollout Checklist
+
+- [ ] Phase 1 — Connection Foundation (undici Agent setup + config defaults)
+- [ ] Phase 1 — Measure latency + empty-diff rate after 1 game day
+- [ ] Phase 2 — Parallel polling + PBP as single source of truth
+- [ ] Phase 2 — PlayerEventBatcher + throttle integration
+- [ ] Phase 3 — Monitor and tune based on production metrics
