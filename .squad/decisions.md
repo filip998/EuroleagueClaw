@@ -419,3 +419,9 @@ All changes are architecturally consistent, correct, and introduce no regression
 **What:** The bot should prioritize live updates for tracked player actions in chat, including missed shots, as close to instant as the upstream data allows.
 
 **Why:** User request — captured for team memory
+
+### 2026-03-13T14:52:40Z
+
+**What:** Keep PlayByPlay fetching limited to live games only while implementing lower-latency tracked-player updates.
+
+**Why:** User request — captured for team memory

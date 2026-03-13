@@ -245,6 +245,18 @@ Bogdan evaluated hiring a DevOps engineer and **recommended against it**. Instea
 - **Files modified:** `src/domain/injury-monitor.ts`, `src/container.ts`, `tests/unit/injury-monitor.test.ts`
 - **Exports added:** `PollingMode` type, `GetRoundGames` type (for external use/testing).
 
+### Low-Latency Polling Strategy (2026-03-13)
+- **Backend developer role in cross-agent orchestration.** Mapped Bogdan's architectural recommendations to exact code changes.
+- **Implementation plan finalized:** 6 files + config updates required. Parallel polling architecture designed.
+- **Connection strategy:** Create two explicit `undici.Agent` instances (v2 API + PBP API) with `keepAliveTimeout: 60_000`. Pass as `dispatcher` option to all `fetch()` calls.
+- **Warm-up method:** New `EuroLeagueAdapter.warmUpConnections()` fires lightweight HEAD/GET to both endpoints before first real poll. Establishes TLS sessions upfront.
+- **Polling architecture:** Keep one `setInterval` loop per game, but parallelize `Promise.allSettled([getLiveScore, getPlayByPlay])` inside `pollGame()`. Prevents race conditions and state coherence issues that two separate loops would create.
+- **Config additions:** 3 new env vars (`EUROLEAGUE_POLL_INTERVAL_MS`, `EUROLEAGUE_FETCH_TIMEOUT_MS`, `EUROLEAGUE_KEEPALIVE_TIMEOUT_MS`). Defaults tuned: poll 10s (was 15s), throttle window 60s (was 120s), max messages 10/min (was 5).
+- **Files to modify:** euroleague.adapter.ts (agents + warm-up), game-tracker.ts (parallel fetch), config.ts (new keys + validation), container.ts (agent injection + cleanup), ports/stats.port.ts (optional warmUp method).
+- **Rollout checklist:** 4 phases — Connection Foundation (undici Agent setup), Parallel Polling, Config Tuning, Monitoring & Validation.
+- **Risk assessment:** Cloudflare 429s (monitor, tunable), undici memory leak (call close() on shutdown), parallel masking errors (Promise.allSettled handles), Telegram limits (throttle manager already tuned), connection exhaustion (pool size 4 per origin is sufficient).
+- **Full implementation plan:** Merged from inbox to `.squad/decisions.md` under "Low-Latency Polling Strategy — Bogdan & Strahinja (2026-03-13)".
+
 ### /roster Live Fetch Fix (2025-07-18)
 - **Task:** `/roster` command was showing stale startup-cached data. Made it always fetch live from Dunkest API.
 - **Root cause:** Rosters fetched once in `container.ts` at boot, stored in `RosterTracker`. `/roster` handler just read cached state.
