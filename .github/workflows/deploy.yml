@@ -3,6 +3,9 @@ name: Deploy to Azure Container Apps
 on:
   push:
     branches: [main]
+    paths-ignore:
+      - '.squad/**'
+      - '*.md'
   workflow_dispatch:
 
 env:
