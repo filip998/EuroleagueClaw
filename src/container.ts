@@ -125,21 +125,11 @@ export async function createContainer(config: AppConfig): Promise<AppContainer> 
     storage,
     logger,
     config.euroleague.pollIntervalMs,
-    async (chatId, event) => {
-      const shouldSend = throttle.shouldSend(chatId, event);
-      if (!shouldSend) {
-        logger.debug({ chatId, eventType: event.type }, 'Event throttled');
-        return;
-      }
-
-      const text = messageComposer.compose(event);
-      const eventKey = `${event.type}-${event.gameCode}-${JSON.stringify(event)}`;
-      const alreadySent = await storage.hasEventBeenSent(chatId, eventKey);
-      if (alreadySent) return;
-
-      await chat.sendMessage({ chatId, text });
-      throttle.recordSent(chatId);
-      await storage.markEventSent(chatId, String(event.gameCode), event.type, eventKey, text);
+    async (_chatId, event) => {
+      // Game-level events (score changes, quarter transitions, lead changes, big runs,
+      // game start/end) are detected for internal state tracking only.
+      // Only tracked-player notifications (via onPlayByPlay roster matching) are sent to chat.
+      logger.debug({ eventType: event.type, gameCode: event.gameCode }, 'Game event detected (not sent to chat)');
     },
     async (chatId, events) => {
       // Lazy-load rosters if not loaded yet (e.g., startup fetch failed)

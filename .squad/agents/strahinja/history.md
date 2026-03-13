@@ -324,3 +324,11 @@ See decision doc: `.squad/decisions/inbox/strahinja-low-latency-rollout.md`
 - **Health probes:** Liveness + startup on `/health:8080` — validates existing health check endpoint
 - **CI/CD blocker:** `squad-ci.yml` still runs `node --test` but project uses vitest; needs vitest fix before deploy workflow can succeed
 - **Next for Strahinja:** (1) Fix CI workflow, (2) Implement Low-Latency Polling Phase 1, (3) Run Azure setup script, (4) Push to main to trigger auto-deploy
+
+### Player-Only Event Filter (2026-07-14)
+**Requested by:** Filip Tanic
+
+- **Change:** Replaced the `onEvent` callback in `container.ts` with a debug-log-only no-op. Game-level events (score changes, quarter transitions, lead changes, big runs, game start/end) are still detected by GameTracker for internal state tracking but are no longer sent to Telegram.
+- **Untouched:** `onPlayByPlay` roster-match callback — this is the only path that posts to chat now (tracked fantasy player actions).
+- **Rationale:** Filip wants the bot to be player-notification-only. The GameTracker's `detectEvents()` still runs because it maintains game lifecycle state (scheduled→live→finished), but the chat output is purely roster matches.
+- **Impact:** Zero test breakage (233 unit tests pass). Build and lint clean. The `MessageComposer.compose()` method and game event types are retained as dead code — they can be cleaned up later if this direction is permanent.

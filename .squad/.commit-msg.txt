@@ -1,7 +1,0 @@
-Scribe: Record Milan DevOps task completion
-
-- Created orchestration log: .squad/orchestration-log/2026-03-13T15-20-22-milan.md
-- Created session log: .squad/log/2026-03-13T15-20-22-powershell-setup-script.md
-- No inbox decisions to merge
-
-Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
