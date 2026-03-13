@@ -1,3 +1,4 @@
+import { Agent } from 'undici';
 import type { StatsPort } from '../../ports/stats.port.js';
 import type { GameInfo, LiveScore, PlayByPlayEvent, PlayByPlayEventType, TeamInfo, RoundSchedule, RoundGame } from '../../domain/types.js';
 import type { Logger } from '../../shared/logger.js';
@@ -42,14 +43,36 @@ function mapPlayType(playType: string | undefined): PlayByPlayEventType {
  * EuroLeague API adapter.
  * Uses the public v2 API at api-live.euroleague.net/v2/
  */
+/** Keep-alive agent options shared by both API hosts */
+const KEEP_ALIVE_OPTS = {
+  keepAliveTimeout: 60_000,
+  keepAliveMaxTimeout: 600_000,
+  connections: 4,
+  pipelining: 1,
+} as const;
+
 export class EuroLeagueAdapter implements StatsPort {
   private gamesCache: { data: ELGame[]; fetchedAt: number } | null = null;
   private readonly cacheTtlMs = 5 * 60 * 1000; // 5 minutes
 
+  /** Keep-alive agent for the v2 API (api-live.euroleague.net) */
+  private readonly v2Agent: Agent;
+  /** Keep-alive agent for the PBP API (live.euroleague.net) */
+  private readonly pbpAgent: Agent;
+
   constructor(
     private readonly baseUrl: string,
     private readonly logger: Logger,
-  ) {}
+  ) {
+    this.v2Agent = new Agent(KEEP_ALIVE_OPTS);
+    this.pbpAgent = new Agent(KEEP_ALIVE_OPTS);
+  }
+
+  /** Close HTTP keep-alive agents. Call on shutdown to prevent socket leaks. */
+  async close(): Promise<void> {
+    await Promise.all([this.v2Agent.close(), this.pbpAgent.close()]);
+    this.logger.info('EuroLeague HTTP agents closed');
+  }
 
   async getTodaySchedule(seasonCode: string, competitionCode: string): Promise<GameInfo[]> {
     const games = await this.fetchAllGames(seasonCode, competitionCode || 'E');
@@ -102,7 +125,8 @@ export class EuroLeagueAdapter implements StatsPort {
         () => fetch(url, {
           headers: { 'Accept': 'application/json' },
           signal: AbortSignal.timeout(10000),
-        }),
+          dispatcher: this.pbpAgent,
+        } as RequestInit),
         { maxAttempts: 2, baseDelayMs: 1000, logger: this.logger },
       );
 
@@ -318,7 +342,8 @@ export class EuroLeagueAdapter implements StatsPort {
         () => fetch(url, {
           headers: { 'Accept': 'application/json' },
           signal: AbortSignal.timeout(10000),
-        }),
+          dispatcher: this.v2Agent,
+        } as RequestInit),
         { maxAttempts: 2, baseDelayMs: 1000, logger: this.logger },
       );
 

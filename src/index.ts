@@ -10,7 +10,7 @@ const __dirname = dirname(__filename);
 async function main() {
   const config = loadConfig();
   const container = await createContainer(config);
-  const { logger, chat, storage, commandRouter, gameTracker, triviaService, injuryMonitor } = container;
+  const { logger, chat, storage, commandRouter, gameTracker, triviaService, injuryMonitor, stats } = container;
 
   // Initialize storage
   await storage.initialize();
@@ -48,6 +48,9 @@ async function main() {
     injuryMonitor?.stop();
     gameTracker.stopAll();
     await chat.stop();
+    if ('close' in stats && typeof stats.close === 'function') {
+      await stats.close();
+    }
     await storage.close();
     process.exit(0);
   };

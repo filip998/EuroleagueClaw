@@ -8,7 +8,7 @@ const configSchema = z.object({
   euroleague: z.object({
     seasonCode: z.string().default('E2025'),
     competitionCode: z.string().default('E'),
-    pollIntervalMs: z.coerce.number().int().min(5000).default(15000),
+    pollIntervalMs: z.coerce.number().int().min(5000).default(10000),
     liveApiBase: z.string().default('https://api-live.euroleague.net'),
   }),
   dunkest: z.object({

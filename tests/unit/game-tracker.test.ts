@@ -256,4 +256,154 @@ describe('GameTracker', () => {
       expect(stopped).toBe(false);
     });
   });
+
+  describe('PBP polling — live-only guard', () => {
+    let pbpCallback: ReturnType<typeof vi.fn>;
+    let trackerWithPbp: GameTracker;
+
+    beforeEach(() => {
+      pbpCallback = vi.fn().mockResolvedValue(undefined);
+      trackerWithPbp = new GameTracker(
+        stats, storage, logger, 15000,
+        async (chatId, event) => { events.push({ chatId, event }); },
+        pbpCallback,
+      );
+    });
+
+    it('should call getPlayByPlay when live score status is live', async () => {
+      (stats.getLiveScore as any).mockResolvedValue({
+        gameCode: 1, homeScore: 2, awayScore: 0, quarter: 1, clock: '9:30', status: 'live',
+      });
+      (stats.getPlayByPlay as any).mockResolvedValue([{
+        eventId: '10', gameCode: 1, quarter: 1, clock: '9:30',
+        teamCode: 'RMA', playerName: 'Hezonja', eventType: 'two_pointer_made',
+        description: '2pt', homeScore: 2, awayScore: 0,
+      }]);
+
+      await trackerWithPbp.startTracking('chat1', 1, 'E2025');
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(stats.getPlayByPlay).toHaveBeenCalledWith(1, 'E2025', null);
+    });
+
+    it.each(['scheduled', 'finished', 'postponed'] as const)(
+      'should NOT call getPlayByPlay when live score status is %s',
+      async (status) => {
+        (stats.getLiveScore as any).mockResolvedValue({
+          gameCode: 1, homeScore: 0, awayScore: 0, quarter: 0, clock: '', status,
+        });
+
+        await trackerWithPbp.startTracking('chat1', 1, 'E2025');
+        await vi.advanceTimersByTimeAsync(0);
+
+        expect(stats.getPlayByPlay).not.toHaveBeenCalled();
+      },
+    );
+
+    it('should NOT call getPlayByPlay when onPlayByPlay callback is absent', async () => {
+      (stats.getLiveScore as any).mockResolvedValue({
+        gameCode: 1, homeScore: 2, awayScore: 0, quarter: 1, clock: '9:30', status: 'live',
+      });
+
+      // Use the outer `tracker` — created without onPlayByPlay
+      await tracker.startTracking('chat1', 1, 'E2025');
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(stats.getPlayByPlay).not.toHaveBeenCalled();
+    });
+
+    it('should dispatch PBP events via onPlayByPlay callback', async () => {
+      const pbpEvent = {
+        eventId: '10', gameCode: 1, quarter: 1, clock: '9:30',
+        teamCode: 'RMA', playerName: 'Hezonja', eventType: 'two_pointer_made',
+        description: '2pt', homeScore: 2, awayScore: 0,
+      };
+      (stats.getLiveScore as any).mockResolvedValue({
+        gameCode: 1, homeScore: 2, awayScore: 0, quarter: 1, clock: '9:30', status: 'live',
+      });
+      (stats.getPlayByPlay as any).mockResolvedValue([pbpEvent]);
+
+      await trackerWithPbp.startTracking('chat1', 1, 'E2025');
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(pbpCallback).toHaveBeenCalledWith('chat1', [pbpEvent]);
+    });
+
+    it('should update lastEventId to the last PBP event ID', async () => {
+      (stats.getLiveScore as any).mockResolvedValue({
+        gameCode: 1, homeScore: 5, awayScore: 0, quarter: 1, clock: '9:00', status: 'live',
+      });
+      (stats.getPlayByPlay as any).mockResolvedValue([
+        { eventId: '5', gameCode: 1, quarter: 1, clock: '9:50', teamCode: 'RMA', playerName: 'A', eventType: 'two_pointer_made', description: '', homeScore: 2, awayScore: 0 },
+        { eventId: '10', gameCode: 1, quarter: 1, clock: '9:30', teamCode: 'RMA', playerName: 'B', eventType: 'three_pointer_made', description: '', homeScore: 5, awayScore: 0 },
+      ]);
+
+      await trackerWithPbp.startTracking('chat1', 1, 'E2025');
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(storage.updateTrackedGame).toHaveBeenCalledWith(
+        'E2025-1',
+        expect.objectContaining({ lastEventId: '10' }),
+      );
+    });
+
+    it('should not dispatch or update lastEventId when PBP returns empty', async () => {
+      (stats.getLiveScore as any).mockResolvedValue({
+        gameCode: 1, homeScore: 2, awayScore: 0, quarter: 1, clock: '9:30', status: 'live',
+      });
+      (stats.getPlayByPlay as any).mockResolvedValue([]);
+
+      await trackerWithPbp.startTracking('chat1', 1, 'E2025');
+      await vi.advanceTimersByTimeAsync(0);
+
+      expect(pbpCallback).not.toHaveBeenCalled();
+      const calls = (storage.updateTrackedGame as any).mock.calls;
+      const lastEventIdUpdates = calls.filter(
+        ([, updates]: [string, Record<string, unknown>]) => 'lastEventId' in updates,
+      );
+      expect(lastEventIdUpdates).toHaveLength(0);
+    });
+
+    it('should handle PBP fetch failure without disrupting game events', async () => {
+      (stats.getLiveScore as any).mockResolvedValue({
+        gameCode: 1, homeScore: 2, awayScore: 0, quarter: 1, clock: '9:30', status: 'live',
+      });
+      (stats.getPlayByPlay as any).mockRejectedValue(new Error('PBP API down'));
+
+      await trackerWithPbp.startTracking('chat1', 1, 'E2025');
+      await vi.advanceTimersByTimeAsync(0);
+
+      // Game events still emitted (game_start + quarter_start)
+      expect(events.length).toBeGreaterThan(0);
+      expect(logger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ gameId: 'E2025-1' }),
+        'PBP poll failed',
+      );
+    });
+
+    it('should pass stored lastEventId on subsequent polls', async () => {
+      (stats.getLiveScore as any).mockResolvedValue({
+        gameCode: 1, homeScore: 2, awayScore: 0, quarter: 1, clock: '9:30', status: 'live',
+      });
+      (stats.getPlayByPlay as any)
+        .mockResolvedValueOnce([{
+          eventId: '10', gameCode: 1, quarter: 1, clock: '9:30',
+          teamCode: 'RMA', playerName: 'X', eventType: 'two_pointer_made',
+          description: '', homeScore: 2, awayScore: 0,
+        }])
+        .mockResolvedValueOnce([]);
+
+      await trackerWithPbp.startTracking('chat1', 1, 'E2025');
+      await vi.advanceTimersByTimeAsync(0);
+
+      // First poll passes null (no prior lastEventId)
+      expect(stats.getPlayByPlay).toHaveBeenCalledWith(1, 'E2025', null);
+
+      // Trigger second poll via interval
+      await vi.advanceTimersByTimeAsync(15000);
+
+      // Second poll passes '10' (persisted from first poll)
+      expect(stats.getPlayByPlay).toHaveBeenCalledWith(1, 'E2025', '10');
+    });
+  });
 });
