@@ -6,6 +6,40 @@
 **Architecture:** Hexagonal (Ports & Adapters) with 5 ports: ChatPort, StatsPort, FantasyPort, StoragePort, SchedulerPort
 **User:** Filip Tanic
 
+## Core Context
+
+**Role:** Backend developer. Owns domain services, business logic, container wiring, and integration between adapters and ports.
+
+**Key Responsibilities:**
+1. Domain services — GameTracker, CommandRouter, MessageComposer, RosterTracker, FantasyTracker, TriviaService
+2. Container wiring — Dependency injection of adapters into domain services
+3. Game polling loop — Subscription management, poll intervals, event detection (score changes, quarter transitions, lead changes, big runs)
+4. Message composition and routing — Format domain events as chat messages, handle MarkdownV2 for formatted commands
+5. CI/CD infrastructure — Fix broken vitest CI; add Docker build + ACR push + Container App deploy CD workflow; Azure resource provisioning
+
+**Current Status (as of 2026-03-13):**
+- Fantasy roster tracking **COMPLETE** (8 files, 81 tests passing, PBP polling + roster matching)
+- `/trackall` command **APPROVED** (tracks all today's games in one message; non-blocking follow-up: add tests)
+- Live tracked-player notifications **NEXT PRIORITY** (Phase 1: expand NOTABLE_EVENT_TYPES + wire PBP through ThrottleManager — 1–2 days)
+- CI/CD infrastructure **BLOCKED** (waiting for Strahinja to task, ~1 week effort, no major blockers identified)
+
+**Key Implemented Features:**
+- Fantasy roster tracking (RosterTracker, PBP polling, roster match formatting)
+- `/trackall` command (batch subscribe to today's games)
+- `/roster` command (show current roster overview)
+- Dunkest roster API endpoint switch (from /roster to /preview for non-authenticated access)
+
+**Pending Phase 1 (Live Tracked-Player Notifications):**
+1. Expand `NOTABLE_EVENT_TYPES` in `roster-tracker.ts` — add two_pointer_missed, three_pointer_missed, free_throw_missed, turnover (remove any non-notable events)
+2. Wire PBP messages through `ThrottleManager` — assign priority (made shots/assists/steals/blocks = normal, misses = low)
+3. Add PBP event type to `composeRosterMatch()` — show what happened (e.g., "2pt Miss" vs "2pt Make")
+4. Unit tests for expanded event matching + throttle integration
+
+**Pending Phase 2 (Polish):**
+- `PlayerEventBatcher` service — collect events per chat, flush every 20–30s as digest
+- `/trackconfig` command — toggle event classes per chat (scoring, playmaking, defensive, negative)
+- Event class persistence — new SQLite column or table
+
 ## Learnings
 
 ### Architecture Review Findings (2026-03-01)
@@ -230,3 +264,38 @@ Bogdan evaluated hiring a DevOps engineer and **recommended against it**. Instea
 - **Files available:** `pao-zalgiris-pbp-raw-opus.json` (157 KB minified), `pao-zalgiris-pbp-pretty-opus.json` (237 KB formatted)
 - **Artifact location:** Session workspace `0a0abdd4-0bc4-4c5a-9ff8-d446e3c86601/files/`
 - **Next steps:** When debugging PBP event parsing or field mappings in `GameTracker` and `RosterTracker`, reference these raw samples for schema validation.
+
+### Low-Latency Polling — Implementation Plan (2026-07-18)
+
+**Task:** Plan 10s-or-less tracked-player updates with connection reuse / keep-alive.
+
+**Current Architecture Bottlenecks Identified:**
+1. `pollGame()` in `game-tracker.ts:123-171` makes **two sequential HTTP calls** per tick: `getLiveScore()` → `getPlayByPlay()`. At ~1-2s each (TLS handshake + round-trip), this burns 2-4s of every 15s window.
+2. `EuroLeagueAdapter` calls two **different API hosts**: `api-live.euroleague.net` (v2 scores) and `live.euroleague.net/api` (PBP). Each host requires its own TCP+TLS connection.
+3. No connection reuse — each `fetch()` call creates a fresh connection despite Node 22's undici-based fetch having keep-alive on the global dispatcher. The issue is that idle connections expire between poll cycles at 15s intervals, causing "cold" TLS handshakes.
+4. Config minimum is 5000ms but default is 15000ms. `AbortSignal.timeout(10000)` is aggressive relative to poll interval — a 10s timeout with 10s interval means zero margin.
+
+**Plan:**
+- **Step 1:** Add `undici` as explicit dep → create two `Agent` instances (v2 host + PBP host) with `keepAliveTimeout: 60_000` and `connections: 4`. Pass as `dispatcher` to `fetch()`.
+- **Step 2:** Parallelize `getLiveScore` + `getPlayByPlay` in `pollGame()` via `Promise.allSettled`. Cuts per-tick time from ~3s to ~1.5s.
+- **Step 3:** Add `warmUpConnections()` method to `EuroLeagueAdapter` — fires one lightweight request to each host when `startPolling()` is called, priming the TLS sessions.
+- **Step 4:** Split `pollIntervalMs` into `scorePollIntervalMs` (10s default) and `pbpPollIntervalMs` (10s default, same loop but can be skipped on alternating ticks).
+- **Step 5:** Tune config defaults and throttle windows for faster delivery.
+- **Step 6:** Adjust `AbortSignal.timeout` to be proportional to poll interval (e.g., `min(pollInterval * 0.8, 8000)`).
+
+**Key Decision: One loop, not two.** Score + PBP should fire in parallel within the same tick. Two independent loops create event ordering drift and duplicate state tracking complexity.
+
+**Key Decision: `undici` as explicit dep.** Node 22's global dispatcher has keep-alive, but we need custom `Agent` with tuned `keepAliveTimeout` (60s vs default 4s) to survive between 10s poll cycles without cold handshakes. `undici` is already the engine under Node's fetch — zero runtime cost.
+
+See decision doc: `.squad/decisions/inbox/strahinja-low-latency-rollout.md`
+
+### Live Tracked-Player Architecture & PBP Poll Recommendations Merged (2026-03-13T07:43:31Z via Scribe)
+- **Architecture decision captured:** .squad/decisions.md → "Live Tracked-Player Notifications — Architecture Recommendation — Bogdan (2026-07-18)"
+- **Build order:** Phase 1 (expand NOTABLE_EVENT_TYPES + wire throttle) immediate; Phase 2 (batching) deferred; Phase 3 (per-player subs) only if demand
+- **Latency strategy merged:** Nikola's "Near-Instant Tracked-Player Notifications — Data Strategy" also captured in decisions.md
+- **Sync-up needed:** Bogdan + Nikola + Strahinja alignment on Phase 1 scope before implementation
+
+### Code Review Approved & Merged (2026-03-13T07:43:31Z via Scribe)
+- **Verdict:** All uncommitted src/ changes approved by Bogdan (2026-07-18)
+- **Changes:** Dunkest endpoint fix + container simplification + /trackall command + help text update
+- **Follow-up items:** Dead code cleanup in roster-tracker.ts + tests for /trackall (non-blocking)

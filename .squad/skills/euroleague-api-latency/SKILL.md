@@ -69,3 +69,12 @@ JSON.parse is ~0.74ms for the full 578-event payload. Quarter flattening, score 
 - **Using `/api/Points` for "all events"** — Points only has scoring events, no misses/turnovers/assists
 - **Assuming event IDs are strictly sequential** — gaps observed in production data
 - **Rate-limiting PBP roster notifications with the general throttle** — player events can exceed 5/min easily during active play; needs separate tier or batching
+- **Using default undici keepAliveTimeout (4s) with 5s polling** — connection drops between every poll, paying ~960ms TLS penalty each time. Set `keepAliveTimeout: 15_000` minimum.
+
+## Connection Management (Node 22)
+
+Node 22's `fetch()` uses undici. The global dispatcher pools connections per-origin with a default `keepAliveTimeout` of 4000ms. For polling intervals ≤5s, the connection will be closed between polls.
+
+**Fix:** Call `setGlobalDispatcher(new Agent({ keepAliveTimeout: 15_000 }))` once at startup. This keeps TCP+TLS connections warm across poll cycles, reducing per-poll latency from ~960ms (cold) to ~56ms (warm).
+
+Two hosts are involved (`api-live.euroleague.net` and `live.euroleague.net`) — undici pools them in separate connection queues automatically.

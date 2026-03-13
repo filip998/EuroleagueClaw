@@ -71,3 +71,9 @@
   - Filtering adds negligible cost (~0.1–0.2ms). The JSON parse dominates local work.
 - **Total per-poll cost (warm connection): ~57ms.** Network is >98% of total time. Local processing is <1ms.
 - **Conclusion:** A single PBP poll costs ~10.5 KB of bandwidth and ~57ms wall time on a warm connection. At 15s polling, that's 240 calls/hour = ~2.5 MB/hour bandwidth. The operation is cheap. Network latency to Cloudflare is the only real cost; local CPU work is trivially fast.
+
+### Scribe Follow-up (2026-03-13T07:43:31Z)
+- **Orchestration log created:** .squad/orchestration-log/2026-03-13_074331-nikola.md — benchmarking mandate and key results
+- **Session log created:** .squad/log/2026-03-13_074331-pbp-benchmark.md — full methodology and findings
+- **Decision inbox merged:** All 15 inbox items consolidated into decisions.md with deduplication
+- **Inbox cleared:** All .squad/decisions/inbox/*.md files deleted

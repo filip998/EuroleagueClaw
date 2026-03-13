@@ -6,6 +6,29 @@
 **Architecture:** Hexagonal (Ports & Adapters) with 5 ports: ChatPort, StatsPort, FantasyPort, StoragePort, SchedulerPort
 **User:** Filip Tanic
 
+## Core Context
+
+**Role:** Lead architect and quality reviewer. Evaluates team decisions, approves architecture changes, reviews code quality.
+
+**Key Responsibilities:**
+1. Architecture reviews — hexagonal boundary integrity, port/adapter correctness, domain purity
+2. Code reviews — catch regressions, suggest refactoring, approve major changes before commit
+3. Team coordination — Planning (rankings of optimization alternatives), decision documentation in `.squad/decisions.md`
+4. Escalation — Identifies issues (DevOps gap, PBP payload bloat) and proposes solutions (task assignment, investigation sprints)
+
+**Current Status (as of 2026-03-13):**
+- Fantasy roster tracking (PBP polling + roster matching) is **complete and approved**
+- Uncommitted src/ changes (dunkest endpoint fix, /trackall command, container simplification) **APPROVED**
+- PBP data optimization strategy **RANKED** (Tier 1 quick wins with 90% impact, Tier 2 API-dependent, Tier 3 avoid)
+- Live tracked-player notifications **RECOMMENDED** (Phase 1: expand event types + throttle; Phase 2: batch digests; Phase 3: per-player subs)
+- CI/CD tasks **ASSIGNED** to Strahinja (1 week effort: CI fix + CD workflow + Azure setup)
+
+**Key Decisions Authored/Led:**
+- Architecture Review (2026-03-01) — SchedulerPort orphaned, TriviaService domain leak, OutgoingMessage Telegram leak
+- DevOps Non-Hire (2026-03-01) — Deployment is simple; task Strahinja instead of hiring specialist
+- PBP Optimization Rankings (2026-03-13) — Tier 1 (skip when rosters not loaded + reduce interval) is 90%+ impact for 5 lines
+- Live Tracked-Player Architecture (2026-07-18) — Phase 1 Phase 2 Phase 3 build order; batch digests are long-term fix for throttle spam
+
 ## Learnings
 
 ### Architecture Review (2025-03-01)
@@ -90,10 +113,34 @@
 - **Phase 3 (if demanded):** Per-player subscriptions, topic threading, PBP API optimization.
 - **Full recommendation:** Written to `.squad/decisions/inbox/bogdan-live-player-architecture.md`.
 
-### Code Review and Orchestration (2026-03-13)
+### Low-Latency Polling Plan (2026-07-18)
+- **Recommended polling interval:** 5 seconds (down from 15s default). Average wait 2.5s + 2-5s upstream delay = ~5-7s total latency. 720 req/hr/game, no rate limits observed.
+- **Cold connection is the #1 latency killer.** Node 22's undici has a 4s default `keepAliveTimeout`. At 5s polling, every request pays the ~960ms TLS penalty. Fix: `setGlobalDispatcher(new Agent({ keepAliveTimeout: 15_000 }))` at startup. Drops per-poll cost from ~960ms to ~56ms.
+- **PBP as single source of truth (Phase 2).** PBP carries running scores, clock, and quarter. Calling `getLiveScore()` alongside PBP is redundant — wastes 50-200ms/cycle. Derive game events from PBP data.
+- **Two-timer model for Phase 2:** 5s PBP poll for live games, 60s v2 API status check for scheduled games.
+- **PlayerEventBatcher needed.** At 5s polling with expanded event types, raw per-event messages will spam chat. Digest messages (grouped by player, flushed every 20-30s) solve this.
+- **Phase 1 deliberately ships without batching** to measure actual message volume before building the batcher.
+- **Score updates and player updates share the fetch but must have separate processing pipelines** — different throttle tiers, different message formats, different dedup strategies.
+- **Full plan:** Written to `.squad/decisions/inbox/bogdan-low-latency-plan.md`.
+
+### Low-Latency Polling Strategy (2026-03-13)
+- **Lead role in cross-agent orchestration.** Analyzed 5 input files (game-tracker, roster-tracker, euroleague adapter, retry, message-composer).
+- **Recommendation finalized:** 5s PBP-focused polling with warm keep-alive, eliminate redundant LiveScore from hot path, batch player notifications.
+- **Keep-alive fix is critical:** `setGlobalDispatcher(new Agent({ keepAliveTimeout: 15_000 }))` in `src/index.ts`. Saves 960ms per poll.
+- **Phase 1 goal:** 5s PBP polling + warm connections. Measure latency. Ship without message batching (measure volume first).
+- **Phase 2 goal:** Parallelize score + PBP fetch, derive all game events from PBP, add PlayerEventBatcher for roster messages.
+- **Phase 3 deferred:** Lightweight `/api/Header` polling gate (if empty-diff rate >80%), tuning based on production metrics.
+- **Risk assessment complete:** Cloudflare rate limiting low probability; undici memory leak mitigatable via cleanup; Telegram throttling already handled.
+- **Full architecture + implementation plan:** Merged from inbox to `.squad/decisions.md` under "Low-Latency Polling Strategy — Bogdan & Strahinja (2026-03-13)".
 - **Scribe role finalized:** Merge agent output → orchestration logs + session log, consolidate decision inbox → decisions.md, deduplicate, update agent histories, commit to git.
 - **Orchestration logs created:** `2026-03-13T073916-nikola.md` and `2026-03-13T073916-bogdan.md` summarizing each agent's findings and recommendations.
 - **Session log created:** `2026-03-13T073916-live-player-updates.md` with full problem statement, latency analysis, architecture recommendation, implementation scope, and risks.
 - **Decision consolidation:** Merged 15 inbox files (nikola-live-player-updates, bogdan-live-player-architecture, nikola-pbp-api-investigation, bogdan-pbp-alternatives, strahinja-roster-live-fetch, strahinja-roster-robustness, strahinja-tv-schedule, tihomir-roster-tests, tihomir-roster-test-coverage, bogdan-src-review, copilot directives) into decisions.md with deduplication and cross-referencing.
 - **History updates:** Appended new learnings to nikola/history.md and bogdan/history.md with references to new decisions and session artifacts.
 - **Git integration:** Prepared .squad/ directory for commit with orchestration logs, session log, updated decisions.md, and agent histories.
+
+### PBP Optimization Strategy Merged (2026-03-13T07:43:31Z via Scribe)
+- **Decision captured:** .squad/decisions.md → "PBP Optimization Strategy — Bogdan (2026-03-13)"
+- **Recommendations ranked:** Tier 1 (skip PBP when rosters not loaded + reduce poll frequency) validates quick wins approach
+- **Nikola's benchmark now backs strategy:** Network dominates; Tier 1 optimizations sufficient without complex API probing
+- **Next action:** Strahinja implements Tier 1 (trivial + 1 config change) for immediate 90%+ traffic reduction
