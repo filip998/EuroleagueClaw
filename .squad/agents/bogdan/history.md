@@ -55,3 +55,13 @@
 - **Key decisions:** PBP base URL hardcoded (different API); RosterTracker uses readFileSync (matches TriviaService pattern, flagged for refactor); event filtering reduces notification noise.
 - **Files modified:** euroleague.adapter.ts, types.ts, roster-tracker.ts (new), game-tracker.ts, message-composer.ts, command-router.ts, container.ts, rosters.json (new).
 - **Test results:** All 81 tests passing. No existing tests modified (backward compatible design).
+
+### Source Code Review — Uncommitted Changes (2026-07-18)
+- **Scope:** 5 modified files in src/ — dunkest.adapter.ts, container.ts, command-router.ts, message-composer.ts, roster-tracker.ts.
+- **Verdict: APPROVE** — all changes are architecturally sound, correct, and backward-compatible.
+- **Dunkest `/roster/preview` endpoint** — Bug fix. The `/roster` endpoint only works for the authenticated user's teams; `/preview` is accessible for any team. Correct fix.
+- **Container roster fallback removed** — Clean simplification. API is the canonical roster source; file fallback is gone. Graceful degradation preserved (warning logged on failure, rosters simply not loaded).
+- **`/trackall` command** — New command to track all today's games at once. Uses plain text (correctly not in MARKDOWN_COMMANDS). Per-game error handling. Follows existing command patterns. No architecture violations.
+- **Dead code in roster-tracker.ts** — `loadFromFile()`, `loadFromFileAndMerge()`, and `mergeRosters()` are now unused. The `readFileSync` import is only needed by dead methods. Non-blocking but should be cleaned up.
+- **Missing tests** — `/trackall` has zero test coverage. Non-blocking but flagged for follow-up.
+- **Test results:** 206/222 pass. 16 SQLite failures are pre-existing Node version mismatch (MODULE_VERSION 137 vs 127), unrelated to changes.
