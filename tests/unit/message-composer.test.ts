@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, beforeEach } from 'vitest';
 import { MessageComposer } from '../../src/domain/message-composer.js';
 import type { GameEvent, RoundSchedule, RoundGame, TeamInfo } from '../../src/domain/types.js';
 import type { NewsEntry } from '../../src/ports/news.port.js';

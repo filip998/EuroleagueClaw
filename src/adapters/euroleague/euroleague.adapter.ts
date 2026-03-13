@@ -1,6 +1,6 @@
 import { Agent } from 'undici';
 import type { StatsPort } from '../../ports/stats.port.js';
-import type { GameInfo, LiveScore, PlayByPlayEvent, PlayByPlayEventType, TeamInfo, RoundSchedule, RoundGame } from '../../domain/types.js';
+import type { GameInfo, LiveScore, PlayByPlayEvent, PlayByPlayEventType, RoundSchedule, RoundGame } from '../../domain/types.js';
 import type { Logger } from '../../shared/logger.js';
 import { ApiError } from '../../shared/errors.js';
 import { withRetry } from '../../shared/retry.js';

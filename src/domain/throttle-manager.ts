@@ -1,4 +1,4 @@
-import type { GameEvent, EventPriority } from './types.js';
+import type { GameEvent } from './types.js';
 import { getEventPriority } from './types.js';
 import type { Logger } from '../shared/logger.js';
 

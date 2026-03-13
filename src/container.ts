@@ -2,7 +2,7 @@ import type { AppConfig } from './config.js';
 import type { ChatPort } from './ports/chat.port.js';
 import type { StatsPort } from './ports/stats.port.js';
 import type { StoragePort } from './ports/storage.port.js';
-import type { TvSchedulePort } from './ports/tv-schedule.port.js';
+import type { TvSchedulePort } from './ports/tv-schedule.port.js'; // eslint-disable-line @typescript-eslint/no-unused-vars
 import type { NewsPort } from './ports/news.port.js';
 import { TelegramAdapter } from './adapters/telegram/telegram.adapter.js';
 import { EuroLeagueAdapter } from './adapters/euroleague/euroleague.adapter.js';

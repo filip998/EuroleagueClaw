@@ -72,7 +72,7 @@ describe('TriviaService', () => {
     });
 
     it('should seed trivia from a JSON file', async () => {
-      const { writeFileSync, mkdirSync } = await import('node:fs');
+      const { writeFileSync } = await import('node:fs');
       const { join } = await import('node:path');
       const os = await import('node:os');
 
