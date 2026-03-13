@@ -12,6 +12,7 @@ interface RunState {
 export class GameTracker {
   private pollingTimers = new Map<string, ReturnType<typeof setInterval>>();
   private runTracker = new Map<string, RunState>();
+  private pollingInFlight = new Set<string>();
 
   get trackedGameCount(): number {
     return this.pollingTimers.size;
@@ -121,6 +122,17 @@ export class GameTracker {
   }
 
   private async pollGame(gameId: string): Promise<void> {
+    if (this.pollingInFlight.has(gameId)) return;
+    this.pollingInFlight.add(gameId);
+
+    try {
+      await this.doPollGame(gameId);
+    } finally {
+      this.pollingInFlight.delete(gameId);
+    }
+  }
+
+  private async doPollGame(gameId: string): Promise<void> {
     const game = await this.storage.getTrackedGame(gameId);
     if (!game) {
       this.stopPolling(gameId);

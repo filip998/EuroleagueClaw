@@ -56,6 +56,8 @@ export type PlayByPlayEventType =
   | 'turnover'
   | 'foul'
   | 'timeout'
+  | 'substitution_in'
+  | 'substitution_out'
   | 'substitution'
   | 'quarter_start'
   | 'quarter_end'

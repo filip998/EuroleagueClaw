@@ -28,8 +28,8 @@ const PLAY_TYPE_MAP: Record<string, PlayByPlayEventType> = {
   'C': 'foul',
   'TOUT': 'timeout',
   'TV': 'timeout',
-  'IN': 'substitution',
-  'OUT': 'substitution',
+  'IN': 'substitution_in',
+  'OUT': 'substitution_out',
   'BP': 'quarter_start',
   'EP': 'quarter_end',
 };

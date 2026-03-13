@@ -14,6 +14,8 @@ const NOTABLE_EVENT_TYPES: ReadonlySet<PlayByPlayEventType> = new Set([
   'block',
   'turnover',
   'foul',
+  'substitution_in',
+  'substitution_out',
 ]);
 
 export interface RosterStats {

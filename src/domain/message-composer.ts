@@ -273,6 +273,10 @@ export class MessageComposer {
         return '💔';
       case 'foul':
         return '⚠️';
+      case 'substitution_in':
+        return '🟢';
+      case 'substitution_out':
+        return '🔴';
       default:
         return '📊';
     }
