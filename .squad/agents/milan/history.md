@@ -21,3 +21,9 @@
 - **All env vars from `src/config.ts`** are mapped in the Container App: TELEGRAM_BOT_TOKEN, TELEGRAM_ALLOWED_CHAT_IDS, DUNKEST_BEARER_TOKEN, DUNKEST_FANTASY_TEAM_IDS, EUROLEAGUE_SEASON_CODE, EUROLEAGUE_COMPETITION_CODE, EUROLEAGUE_POLL_INTERVAL_MS, LOG_LEVEL, NODE_ENV, DATABASE_PATH, HEALTH_PORT, THROTTLE_WINDOW_SECONDS, THROTTLE_MAX_MESSAGES_PER_MINUTE.
 - **Sensitive values** (TELEGRAM_BOT_TOKEN, DUNKEST_BEARER_TOKEN) use Container Apps secrets with `secretref:` — never stored in plain text in deployment config.
 - **Pre-existing issue**: SQLite integration tests fail on Windows due to native binding path mismatch — not a deployment concern (runs fine in Alpine Docker + CI).
+
+### PowerShell Azure Setup Script (2025-07-25)
+- Both bash (`scripts/azure-setup.sh`) and PowerShell (`scripts/azure-setup.ps1`) setup scripts now exist for Azure provisioning.
+- PowerShell version is a 1:1 conversion: same resources, idempotency checks, secrets, env vars, volume mount, health probes, and summary output.
+- Uses `$ErrorActionPreference = 'Stop'`, `2>$null` for existence checks, temp file for YAML (instead of heredoc to stdin), and `Write-Host -ForegroundColor` for colored output.
+- Compatible with both Windows PowerShell 5.1+ and PowerShell Core 7+.
