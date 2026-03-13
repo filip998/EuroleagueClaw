@@ -65,3 +65,13 @@
 - **Dead code in roster-tracker.ts** — `loadFromFile()`, `loadFromFileAndMerge()`, and `mergeRosters()` are now unused. The `readFileSync` import is only needed by dead methods. Non-blocking but should be cleaned up.
 - **Missing tests** — `/trackall` has zero test coverage. Non-blocking but flagged for follow-up.
 - **Test results:** 206/222 pass. 16 SQLite failures are pre-existing Node version mismatch (MODULE_VERSION 137 vs 127), unrelated to changes.
+
+### PBP Fetch Optimization Analysis (2026-07-18)
+- **PBP is used for ONE purpose only:** roster matching (friend's player notifications). It is NOT used for score detection, quarter transitions, lead changes, or big runs — those all use `getLiveScore()`.
+- **Full game PBP payload:** ~154 KB, 578 events. Only 27% (156) are "notable" events the bot cares about. The rest (fouls, rebounds, subs, timeouts) are fetched and parsed but discarded.
+- **Client-side filtering:** `sinceEventId` filter happens AFTER full fetch+parse. The upstream `live.euroleague.net/api/PlaybyPlay` endpoint has no known server-side filtering, pagination, or quarter scoping.
+- **Hidden waste discovered:** PBP is fetched even when rosters aren't loaded. The `onPlayByPlay` callback is always wired in container.ts; it returns early if rosters missing, but the HTTP fetch already happened.
+- **Poll frequency:** PBP polls at same rate as LiveScore (default 15s). Over a 2-hour game, that's ~480 full fetches totaling ~45MB per tracked game.
+- **Recommended immediate wins:** (1) Skip PBP fetch when `!rosterTracker.isLoaded()` — trivial, zero risk. (2) Reduce PBP poll frequency to 30-45s — easy, roster notifications aren't as time-critical as score updates.
+- **Pending:** Nikola probing API for ETag/conditional request support, quarter parameter, gzip, and server-side `since` filter.
+- **Full analysis:** Written to `.squad/decisions/inbox/bogdan-pbp-alternatives.md`.

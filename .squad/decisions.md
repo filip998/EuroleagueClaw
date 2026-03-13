@@ -335,3 +335,107 @@ User requested full PAO–Zalgiris raw play-by-play API payload saved as JSON fo
 
 - **Strahinja:** PBP parsing in `GameTracker` and `RosterTracker` should reference these raw samples when debugging field mappings.
 - **Tihomir:** Integration tests can use this payload as fixture data for PBP event parsing.
+
+---
+
+## PBP API Incremental Fetch Investigation — Nikola (2026-03-13)
+
+**Status:** INVESTIGATION COMPLETE
+
+**Verdict:** No API-level incremental support. Gzip compression already optimized. Alternative endpoints discovered.
+
+### Key Findings
+
+1. **Zero Incremental Support**
+   - Tested 8 query parameter styles, conditional headers, and `/Period` endpoint variant
+   - All returned identical full 157 KB payload
+   - No server-side filtering, ETags, or `since` parameter support
+
+2. **Gzip Compression Active** ✅
+   - Wire transfer: ~10.7 KB (6.8% of uncompressed)
+   - Already highly optimized at transport layer
+   - Node.js `fetch()` handles automatically
+
+3. **Lightweight Alternative Endpoints Discovered**
+   - `/api/Header`: 475 bytes gzipped (has live scores, clock, fouls, timeouts)
+   - `/api/Points`: 4.5 KB gzipped (scoring plays only, 166 events)
+   - `/api/Boxscore`: ~2 KB gzipped (player stats per team)
+
+### Assessment
+
+**Current state is acceptable.** Gzip brings 157 KB down to 10.7 KB (~11 KB per poll). For a Telegram bot at 15-second polling, this is manageable.
+
+**For future optimization:** Use `/api/Header` for lightweight preliminary checks before fetching full PBP.
+
+### Recommendations
+
+- No code changes required now
+- If bandwidth becomes critical, implement "poll Header first, fetch PBP on score change" pattern
+- Avoid per-quarter fetching (not supported by API)
+
+---
+
+## PBP Optimization Strategy — Bogdan (2026-03-13)
+
+**Status:** RANKED RECOMMENDATIONS COMPLETE
+
+**Verdict:** PBP is only used for roster matching. Quick wins available with minimal behavior impact.
+
+### Critical Finding
+
+**PBP only used for roster matching.** Score detection, quarter transitions, lead changes, and big runs all use `getLiveScore()`, not PBP.
+
+### Data Volume
+
+- Full game PBP: ~154 KB / 578 events
+- Notable events (27%): ~156 events
+- Wasted non-notable events (73%): 422 events
+- At 15s polling over 2-hour game: ~45 MB transfer per tracked game
+
+### Hidden Waste
+
+Current implementation fetches full PBP every 15 seconds **even when rosters aren't loaded**. If `rosters.json` is empty, we fetch 154 KB and return early with no roster match.
+
+### Ranked Optimization Alternatives
+
+**Tier 1: Free Wins (No API Probing)**
+
+1. **Skip PBP fetch when rosters not loaded** (3 lines)
+   - Impact: 100% traffic reduction when no rosters configured
+   - Change: Guard `onPlayByPlay` callback with roster presence check
+   - Risk: Zero (roster matching is optional feature)
+
+2. **Reduce PBP poll frequency to 30–45s** (1 number change)
+   - Impact: 50–67% traffic reduction
+   - Change: `const PBP_POLL_INTERVAL_MS = 30000;` instead of 15000
+   - Risk: Minimal (roster notifications arrive 15–30s later; unnoticed by users)
+   - Rationale: Roster notifications less time-critical than live scores
+
+**Tier 2: API-Dependent (After Nikola's Probe)**
+
+3. **Lightweight polling pattern** (if `/api/Header` stable)
+   - Impact: 60–70% reduction
+   - Pattern: Poll Header every 30s, fetch full PBP on score change only
+
+4. **Points-only polling** (if `/api/Points` includes player names)
+   - Impact: 70% reduction
+   - Trade-off: Loses rebound/foul/sub events (acceptable for roster tracking)
+
+**Tier 3: Avoid**
+
+- Per-quarter filtering (not supported)
+- Client-side dedup + cache (redundant with server-side filtering)
+
+### Combined Impact
+
+Implementing Tier 1 (guard + reduce interval): **90%+ reduction** with 5 lines of code.
+
+### Implementation Order
+
+1. **Immediate:** Guard on roster presence + reduce interval to 30s
+2. **Monitor:** Track bandwidth; if <1MB/game, declare success
+3. **Future:** Evaluate Tier 2 alternatives if needed
+
+### Owner
+
+Strahinja (Backend Dev) — High priority, quick ROI, low risk
