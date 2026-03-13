@@ -4,7 +4,6 @@ import type { StatsPort } from './ports/stats.port.js';
 import type { StoragePort } from './ports/storage.port.js';
 import type { TvSchedulePort } from './ports/tv-schedule.port.js'; // eslint-disable-line @typescript-eslint/no-unused-vars
 import type { NewsPort } from './ports/news.port.js';
-import type { BoxScore } from './domain/types.js';
 import { TelegramAdapter } from './adapters/telegram/telegram.adapter.js';
 import { EuroLeagueAdapter } from './adapters/euroleague/euroleague.adapter.js';
 import { DunkestAdapter } from './adapters/dunkest/dunkest.adapter.js';
@@ -142,37 +141,12 @@ export async function createContainer(config: AppConfig): Promise<AppContainer> 
         }
       }
 
-      // Fetch boxscore for PIR enrichment (cached, 60s TTL)
-      let boxScore: BoxScore | null = null;
-      if (events.length > 0) {
-        try {
-          boxScore = await stats.getBoxScore(events[0].gameCode, config.euroleague.seasonCode);
-        } catch (err) {
-          logger.debug({ error: String(err) }, 'Boxscore fetch failed — PIR will be omitted');
-        }
-      }
-
       for (const event of events) {
         rosterTracker.registerKnownPlayer(event.playerName);
         const owners = rosterTracker.matchEvent(event, chatId);
         if (owners.length > 0) {
-          // Look up player PIR from boxscore
-          let playerPir: number | undefined;
-          if (boxScore) {
-            const normalizedName = event.playerName.trim().toLowerCase();
-            for (const team of boxScore.teams) {
-              const player = team.players.find(
-                (p) => p.playerName.trim().toLowerCase() === normalizedName,
-              );
-              if (player) {
-                playerPir = player.pir;
-                break;
-              }
-            }
-          }
-
-          logger.debug({ chatId, player: event.playerName, owners, eventType: event.eventType, pir: playerPir }, 'PBP roster match found');
-          const text = messageComposer.composeRosterMatch(event, owners, playerPir);
+          logger.debug({ chatId, player: event.playerName, owners, eventType: event.eventType }, 'PBP roster match found');
+          const text = messageComposer.composeRosterMatch(event, owners);
           await chat.sendMessage({ chatId, text, parseMode: 'MarkdownV2' });
         }
       }

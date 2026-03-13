@@ -75,7 +75,7 @@ export class RosterTracker {
     return owners;
   }
 
-  getOverview(): string {
+  getOverview(pirMap?: Map<string, number>): string {
     if (!this.loaded || this.rosterData.length === 0) {
       return escapeMarkdownV2('📋 No fantasy rosters loaded.');
     }
@@ -106,14 +106,14 @@ export class RosterTracker {
           parts.push(`${section.emoji} ${italic(section.label)}`);
           for (let pi = 0; pi < section.players.length; pi++) {
             const prefix = pi === section.players.length - 1 ? '└' : '├';
-            parts.push(`  ${prefix} ${this.formatPlayerLineMd(section.players[pi])}`);
+            parts.push(`  ${prefix} ${this.formatPlayerLineMd(section.players[pi], pirMap)}`);
           }
           if (si < sections.length - 1) parts.push('');
         }
       } else {
         for (let pi = 0; pi < roster.players.length; pi++) {
           const prefix = pi === roster.players.length - 1 ? '└' : '├';
-          parts.push(`  ${prefix} ${this.formatPlayerLineMd(roster.players[pi])}`);
+          parts.push(`  ${prefix} ${this.formatPlayerLineMd(roster.players[pi], pirMap)}`);
         }
       }
 
@@ -267,7 +267,7 @@ export class RosterTracker {
     }
   }
 
-  private formatPlayerLineMd(p: RosteredPlayer): string {
+  private formatPlayerLineMd(p: RosteredPlayer, pirMap?: Map<string, number>): string {
     const e = escapeMarkdownV2;
     const pos = p.position ? `${e(this.positionTag(p.position).trim())} · ` : '';
     const name = bold(this.formatDisplayName(p.playerName));
@@ -276,7 +276,14 @@ export class RosterTracker {
       : '';
     const captain = p.isCaptain ? ' ©' : '';
     const fire = p.isOnFire ? ' 🔥' : '';
-    return `${pos}${name}${matchup}${captain}${fire}`;
+    let pirTag = '';
+    if (pirMap) {
+      const pir = pirMap.get(RosterTracker.normalizeName(p.playerName));
+      if (pir !== undefined) {
+        pirTag = ` · PIR: ${bold(String(pir))}`;
+      }
+    }
+    return `${pos}${name}${matchup}${captain}${fire}${pirTag}`;
   }
 
   /** Format a player line for use inside a code block (no MarkdownV2 escaping). */

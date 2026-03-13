@@ -219,7 +219,7 @@ export class CommandRouter {
       return this.deps.triviaService.getRandomTrivia();
     });
 
-    this.commands.set('roster', async () => {
+    this.commands.set('roster', async (cmd) => {
       if (!this.deps.rosterTracker) {
         return '📋 No fantasy rosters loaded.';
       }
@@ -239,7 +239,28 @@ export class CommandRouter {
       if (!this.deps.rosterTracker.isLoaded()) {
         return '📋 No fantasy rosters loaded.';
       }
-      return this.deps.rosterTracker.getOverview();
+
+      // Build PIR map from boxscore data of tracked games
+      const pirMap = new Map<string, number>();
+      try {
+        const games = await this.deps.gameTracker.getTrackedGames(cmd.chatId);
+        for (const game of games) {
+          if (game.status === 'finished' || game.status === 'live') {
+            const boxScore = await this.deps.stats.getBoxScore(game.gameCode, game.seasonCode);
+            if (boxScore) {
+              for (const team of boxScore.teams) {
+                for (const player of team.players) {
+                  pirMap.set(player.playerName.trim().toLowerCase(), player.pir);
+                }
+              }
+            }
+          }
+        }
+      } catch (err) {
+        this.deps.logger.debug({ error: String(err) }, 'PIR enrichment failed for /roster');
+      }
+
+      return this.deps.rosterTracker.getOverview(pirMap.size > 0 ? pirMap : undefined);
     });
 
     this.commands.set('rostercheck', async () => {

@@ -428,15 +428,14 @@ describe('MessageComposer - PIR', () => {
   });
 
   describe('composeRosterMatch', () => {
-    it('should include PIR value when provided', () => {
+    it('should format roster match without PIR', () => {
       const event = makePbpEvent();
       const owners = ['Filip', 'Marko'];
-      const pir = 15;
 
-      const msg = composer.composeRosterMatch(event, owners, pir);
+      const msg = composer.composeRosterMatch(event, owners);
 
       expect(msg).toContain('CAMPAZZO, FACUNDO');
-      expect(msg).toContain('PIR: 15'); // Escaped MarkdownV2: \(PIR: 15\)
+      expect(msg).not.toContain('PIR');
       expect(msg).toContain('Filip, Marko');
     });
 
@@ -449,27 +448,6 @@ describe('MessageComposer - PIR', () => {
       expect(msg).toContain('CAMPAZZO, FACUNDO');
       expect(msg).not.toContain('PIR');
       expect(msg).toContain('Filip');
-    });
-
-    it('should include PIR value of 0', () => {
-      const event = makePbpEvent();
-      const owners = ['Filip'];
-      const pir = 0;
-
-      const msg = composer.composeRosterMatch(event, owners, pir);
-
-      expect(msg).toContain('PIR: 0'); // Escaped MarkdownV2
-    });
-
-    it('should handle negative PIR values', () => {
-      const event = makePbpEvent();
-      const owners = ['Filip'];
-      const pir = -3;
-
-      const msg = composer.composeRosterMatch(event, owners, pir);
-
-      expect(msg).toContain('PIR:'); // Check for PIR tag
-      expect(msg).toContain('-3'); // Check for negative value
     });
   });
 

@@ -78,14 +78,17 @@ export class GameTracker {
   }
 
   /** Resume polling for all active tracked games (called on startup) */
-  async resumeAll(): Promise<void> {
+  async resumeAll(): Promise<TrackedGame[]> {
     const games = await this.storage.getAllTrackedGames();
+    const resumed: TrackedGame[] = [];
     for (const game of games) {
       if (game.status !== 'finished') {
         this.startPolling(game.id);
+        resumed.push(game);
       }
     }
-    this.logger.info({ count: games.length }, 'Resumed tracking for active games');
+    this.logger.info({ count: resumed.length, total: games.length }, 'Resumed tracking for active games');
+    return resumed;
   }
 
   stopAll(): void {
@@ -133,10 +136,16 @@ export class GameTracker {
   }
 
   private async doPollGame(gameId: string): Promise<void> {
-    const game = await this.storage.getTrackedGame(gameId);
+    let game = await this.storage.getTrackedGame(gameId);
     if (!game) {
-      this.stopPolling(gameId);
-      return;
+      this.logger.warn({ gameId }, 'Game not found in storage — retrying once');
+      await new Promise((r) => setTimeout(r, 1000));
+      game = await this.storage.getTrackedGame(gameId);
+      if (!game) {
+        this.logger.warn({ gameId }, 'Game not found after retry — stopping polling');
+        this.stopPolling(gameId);
+        return;
+      }
     }
 
     try {

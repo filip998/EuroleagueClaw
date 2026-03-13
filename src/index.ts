@@ -10,7 +10,7 @@ const __dirname = dirname(__filename);
 async function main() {
   const config = loadConfig();
   const container = await createContainer(config);
-  const { logger, chat, storage, commandRouter, gameTracker, triviaService, injuryMonitor, stats } = container;
+  const { logger, chat, storage, commandRouter, gameTracker, triviaService, injuryMonitor, stats, messageComposer } = container;
 
   // Initialize storage
   await storage.initialize();
@@ -22,7 +22,17 @@ async function main() {
 
 
   // Resume tracking any previously tracked games
-  await gameTracker.resumeAll();
+  try {
+    const resumedGames = await gameTracker.resumeAll();
+    for (const game of resumedGames) {
+      messageComposer.registerGame(game.gameCode, game.homeTeam, game.awayTeam);
+    }
+    if (resumedGames.length > 0) {
+      logger.info({ count: resumedGames.length }, 'Registered team names for resumed games');
+    }
+  } catch (err) {
+    logger.error({ error: String(err) }, 'Failed to resume tracked games — will require manual /trackall');
+  }
 
   // Start listening for chat commands
   await chat.start(async (cmd) => {

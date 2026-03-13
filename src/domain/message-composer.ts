@@ -217,11 +217,10 @@ export class MessageComposer {
     return `🤖 EuroleagueClaw Status\n\n  ⏱ Uptime: ${uptimeStr}\n  📊 Tracking: ${trackedCount} game(s)`;
   }
 
-  composeRosterMatch(event: PlayByPlayEvent, owners: string[], playerPir?: number): string {
+  composeRosterMatch(event: PlayByPlayEvent, owners: string[]): string {
     const emoji = this.rosterEventEmoji(event.eventType);
     const ownerList = escapeMarkdownV2(owners.join(', '));
-    const pirTag = playerPir !== undefined ? ` ${escapeMarkdownV2(`(PIR: ${playerPir})`)}` : '';
-    return `${emoji} ${bold(event.playerName)}${pirTag} — ${escapeMarkdownV2(event.description)}\n📋 ${escapeMarkdownV2('On roster:')} ${ownerList}`;
+    return `${emoji} ${bold(event.playerName)} — ${escapeMarkdownV2(event.description)}\n📋 ${escapeMarkdownV2('On roster:')} ${ownerList}`;
   }
 
   composeRosterStatus(stats: RosterStats): string {
