@@ -67,16 +67,56 @@ export async function createContainer(config: AppConfig): Promise<AppContainer> 
 
   // Roster tracker — load from Dunkest API
   const rosterTracker = new RosterTracker();
-  if (config.dunkest.bearerToken && config.dunkest.fantasyTeamIds.length > 0) {
-    const dunkestForRosters = new DunkestAdapter(config.dunkest.apiBase, config.dunkest.bearerToken, logger);
+  const rosterDunkestConfig = {
+    bearerToken: config.dunkest.bearerToken,
+    apiBase: config.dunkest.apiBase,
+    fantasyTeamIds: config.dunkest.fantasyTeamIds,
+  };
+
+  if (rosterDunkestConfig.bearerToken && rosterDunkestConfig.fantasyTeamIds.length > 0) {
+    const dunkestForRosters = new DunkestAdapter(rosterDunkestConfig.apiBase, rosterDunkestConfig.bearerToken, logger);
     try {
-      const result = await dunkestForRosters.getRosters(config.dunkest.fantasyTeamIds);
+      const result = await dunkestForRosters.getRosters(rosterDunkestConfig.fantasyTeamIds);
       if (result.rosters.length > 0) {
         rosterTracker.loadRosters(result.rosters, result.matchdayNumber);
         logger.info({ teamCount: result.rosters.length, matchday: result.matchdayNumber }, 'Fantasy rosters loaded from Dunkest API');
       }
     } catch (err) {
-      logger.warn({ error: String(err) }, 'Dunkest API roster fetch failed');
+      logger.warn({ error: String(err) }, 'Dunkest API roster fetch failed at startup — will retry lazily on first PBP events');
+    }
+  }
+
+  // Lazy roster loading state — tracks last attempt to avoid hammering Dunkest API
+  let lastRosterLoadAttempt = 0;
+  const ROSTER_RETRY_COOLDOWN_MS = 5 * 60 * 1000; // 5 minutes
+
+  async function tryLazyRosterLoad(): Promise<boolean> {
+    if (!rosterDunkestConfig.bearerToken || rosterDunkestConfig.fantasyTeamIds.length === 0) {
+      return false;
+    }
+
+    const now = Date.now();
+    if (now - lastRosterLoadAttempt < ROSTER_RETRY_COOLDOWN_MS) {
+      logger.debug('Roster lazy-load skipped — cooldown active');
+      return false;
+    }
+
+    lastRosterLoadAttempt = now;
+    logger.info('Attempting lazy roster load from Dunkest API');
+
+    try {
+      const dunkest = new DunkestAdapter(rosterDunkestConfig.apiBase, rosterDunkestConfig.bearerToken, logger);
+      const result = await dunkest.getRosters(rosterDunkestConfig.fantasyTeamIds);
+      if (result.rosters.length > 0) {
+        rosterTracker.loadRosters(result.rosters, result.matchdayNumber);
+        logger.info({ teamCount: result.rosters.length, matchday: result.matchdayNumber }, 'Lazy roster load succeeded');
+        return true;
+      }
+      logger.warn('Lazy roster load returned empty rosters');
+      return false;
+    } catch (err) {
+      logger.warn({ error: String(err) }, 'Lazy roster load failed — will retry after cooldown');
+      return false;
     }
   }
 
@@ -102,11 +142,20 @@ export async function createContainer(config: AppConfig): Promise<AppContainer> 
       await storage.markEventSent(chatId, String(event.gameCode), event.type, eventKey, text);
     },
     async (chatId, events) => {
-      if (!rosterTracker.isLoaded()) return;
+      // Lazy-load rosters if not loaded yet (e.g., startup fetch failed)
+      if (!rosterTracker.isLoaded()) {
+        logger.warn({ chatId, eventCount: events.length }, 'PBP events arrived but rosters not loaded — attempting lazy load');
+        const loaded = await tryLazyRosterLoad();
+        if (!loaded) {
+          logger.warn({ chatId }, 'Roster matching skipped — no rosters available');
+          return;
+        }
+      }
 
       for (const event of events) {
         const owners = rosterTracker.matchEvent(event);
         if (owners.length > 0) {
+          logger.debug({ chatId, player: event.playerName, owners, eventType: event.eventType }, 'PBP roster match found');
           const text = messageComposer.composeRosterMatch(event, owners);
           await chat.sendMessage({ chatId, text, parseMode: 'MarkdownV2' });
         }
@@ -116,8 +165,10 @@ export async function createContainer(config: AppConfig): Promise<AppContainer> 
 
   // Fantasy (optional — only if bearer token is configured)
   let fantasyTracker: FantasyTracker | undefined;
+  let fantasyPort: DunkestAdapter | undefined;
   if (config.dunkest.bearerToken) {
     const dunkest = new DunkestAdapter(config.dunkest.apiBase, config.dunkest.bearerToken, logger);
+    fantasyPort = dunkest;
     fantasyTracker = new FantasyTracker(dunkest, logger);
     logger.info('Fantasy tracking enabled (Dunkest adapter)');
   }
@@ -157,6 +208,8 @@ export async function createContainer(config: AppConfig): Promise<AppContainer> 
     fantasyTracker,
     triviaService,
     rosterTracker,
+    fantasyPort,
+    fantasyTeamIds: config.dunkest.fantasyTeamIds,
     tvSchedule,
     news,
   });

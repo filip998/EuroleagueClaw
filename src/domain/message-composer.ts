@@ -1,4 +1,5 @@
 import type { GameEvent, TrackedGame, PlayByPlayEvent, RoundSchedule, RoundGame } from './types.js';
+import type { RosterStats } from './roster-tracker.js';
 import type { NewsEntry } from '../ports/news.port.js';
 import { escapeMarkdownV2, bold, italic, SEPARATOR } from '../shared/markdown-v2.js';
 
@@ -195,6 +196,7 @@ export class MessageComposer {
       `▸ ${bold('/games')} ${e('— Round schedule')}`,
       `▸ ${bold('/fantasy')} ${e('— Fantasy overview')}`,
       `▸ ${bold('/roster')} ${e('— Roster overview')}`,
+      `▸ ${bold('/rostercheck')} ${e('— Roster debug status')}`,
       `▸ ${bold('/mute <m>')} ${e('— Silence updates')}`,
       `▸ ${bold('/unmute')} ${e('— Resume updates')}`,
       `▸ ${bold('/trivia')} ${e('— Random trivia')}`,
@@ -214,6 +216,38 @@ export class MessageComposer {
     const emoji = this.rosterEventEmoji(event.eventType);
     const ownerList = escapeMarkdownV2(owners.join(', '));
     return `${emoji} ${bold(event.playerName)} — ${escapeMarkdownV2(event.description)}\n📋 ${escapeMarkdownV2('On roster:')} ${ownerList}`;
+  }
+
+  composeRosterStatus(stats: RosterStats): string {
+    const e = escapeMarkdownV2;
+    const header = `🔍 ${bold('Roster Status')}\n${SEPARATOR}`;
+
+    const statusEmoji = stats.loaded ? '✅' : '❌';
+    const loadedText = stats.loaded ? 'Loaded' : 'Not loaded';
+    const lines = [
+      `${statusEmoji} ${bold('Status:')} ${e(loadedText)}`,
+      `📊 ${bold('Players indexed:')} ${e(String(stats.playerCount))}`,
+      `🏀 ${bold('Teams:')} ${e(String(stats.teamCount))}`,
+      `📅 ${bold('Matchday:')} ${e(String(stats.roundNumber))}`,
+    ];
+
+    if (stats.lastLoadedAt) {
+      const timeStr = stats.lastLoadedAt.toLocaleString('sr-Latn', { timeZone: 'Europe/Belgrade' });
+      lines.push(`🕐 ${bold('Last loaded:')} ${e(timeStr)}`);
+    } else {
+      lines.push(`🕐 ${bold('Last loaded:')} ${e('Never')}`);
+    }
+
+    if (stats.loaded && stats.playerNames.length > 0) {
+      lines.push('');
+      lines.push(`📋 ${bold('Indexed players:')}`);
+      const sorted = [...stats.playerNames].sort();
+      for (const name of sorted) {
+        lines.push(`  · ${e(name)}`);
+      }
+    }
+
+    return `${header}\n\n${lines.join('\n')}`;
   }
 
   private rosterEventEmoji(eventType: string): string {

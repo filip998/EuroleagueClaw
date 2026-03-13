@@ -173,6 +173,16 @@ Bogdan evaluated hiring a DevOps engineer and **recommended against it**. Instea
 
 ### RotoWire EuroLeague News Integration (2026-07-18)
 - **Task:** Full RotoWire integration — scraper adapter, /rotowire command, proactive injury alerts.
+
+### Roster Matching Robustness Fix (2026-07-18)
+- **Bug:** During PRS vs ASV game, Nadir Hifi's PBP events triggered zero roster match notifications. Root cause: startup Dunkest API fetch silently failed, `rosterTracker.isLoaded()` stayed false, and `onPlayByPlay` callback silently returned without matching any events.
+- **Fix 1 — Lazy roster loading:** Added `tryLazyRosterLoad()` in container.ts. When `onPlayByPlay` fires and rosters aren't loaded, it attempts a Dunkest API fetch with 5-minute cooldown to avoid hammering. State tracked via `lastRosterLoadAttempt` timestamp.
+- **Fix 2 — RosterTracker diagnostics:** Added `lastLoadedAt` timestamp, `needsReload()` (stale after 1 hour), `getStats()` returning `RosterStats` with player count, team count, indexed names. Exported `RosterStats` interface.
+- **Fix 3 — Logging:** `onPlayByPlay` now logs WARN when skipping due to unloaded rosters. Logs lazy-load attempts and results. Logs DEBUG on each PBP roster match.
+- **Fix 4 — `/rostercheck` command:** Shows loaded status, player count, team count, matchday, last loaded timestamp, and all indexed player names. Added to `MARKDOWN_COMMANDS` set for MarkdownV2 output. `MessageComposer.composeRosterStatus()` formats the diagnostics view.
+- **Architecture:** Lazy loading stays in container.ts (wiring layer) which CAN access adapters directly — no hexagonal violations. `RosterStats` type exported from domain, consumed by `MessageComposer` — pure domain-to-domain dependency.
+- **Files modified (4):** `src/domain/roster-tracker.ts` (stats/diagnostics), `src/container.ts` (lazy loading + logging), `src/domain/command-router.ts` (/rostercheck), `src/domain/message-composer.ts` (composeRosterStatus + help text)
+- **Test Results:** 223 unit tests passing, build clean. 16 pre-existing SQLite integration test failures (native module issue).
 - **Architecture:** Full hexagonal pattern — new `NewsPort` interface, `RotoWireAdapter` implementation, `InjuryMonitor` domain service, wired via `CommandRouter` and `container.ts`.
 - **Port:** `src/ports/news.port.ts` — `NewsPort` with `getLatestNews()` and `getInjuryNews()` returning `NewsEntry[]`.
 - **Adapter:** `src/adapters/rotowire/rotowire.adapter.ts` — Fetches `rotowire.com/euro/news.php` with browser-like UA. Regex-based HTML parsing extracts player name, headline, timestamp, position, injury type, and news text. 1-hour cache (same pattern as ArenaSportAdapter). Graceful degradation — returns stale cache or [] on failure.
@@ -200,3 +210,13 @@ Bogdan evaluated hiring a DevOps engineer and **recommended against it**. Instea
 - **Tests:** 7 new tests covering all interval modes, multi-game rounds, finished games, timezone edge cases.
 - **Files modified:** `src/domain/injury-monitor.ts`, `src/container.ts`, `tests/unit/injury-monitor.test.ts`
 - **Exports added:** `PollingMode` type, `GetRoundGames` type (for external use/testing).
+
+### /roster Live Fetch Fix (2025-07-18)
+- **Task:** `/roster` command was showing stale startup-cached data. Made it always fetch live from Dunkest API.
+- **Root cause:** Rosters fetched once in `container.ts` at boot, stored in `RosterTracker`. `/roster` handler just read cached state.
+- **Fix:** Added `FantasyPort` and `fantasyTeamIds` to `CommandRouterDeps`. `/roster` handler now calls `fantasyPort.getRosters(fantasyTeamIds)` to get fresh data, loads it into `rosterTracker`, then returns the overview. Falls back to cached data if live fetch fails.
+- **Dead code removed:** `loadFromFile`, `loadFromFileAndMerge`, `mergeRosters` methods and `import { readFileSync } from 'node:fs'` from `roster-tracker.ts` — none were called anywhere.
+- **Startup pre-load preserved:** Container still pre-loads rosters at boot for the `onRosterEvent` PBP callback in `GameTracker`.
+- **Container wiring:** Reused the existing `DunkestAdapter` instance (created for `fantasyTracker`) and passed it + `config.dunkest.fantasyTeamIds` into CommandRouter deps.
+- **Tests updated:** Removed `loadFromFile` test suite (3 tests), updated remaining tests to use `loadRosters()` directly. All 209 unit tests pass, build clean.
+- **Files changed (4):** `src/domain/command-router.ts`, `src/container.ts`, `src/domain/roster-tracker.ts`, `tests/unit/roster-tracker.test.ts`

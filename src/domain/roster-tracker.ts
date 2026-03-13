@@ -1,5 +1,4 @@
-import { readFileSync } from 'node:fs';
-import type { FantasyRoster, PlayByPlayEvent, PlayByPlayEventType, RosteredPlayer, RosterRound } from './types.js';
+import type { FantasyRoster, PlayByPlayEvent, PlayByPlayEventType, RosteredPlayer } from './types.js';
 import { escapeMarkdownV2, bold, italic, SEPARATOR } from '../shared/markdown-v2.js';
 
 const NOTABLE_EVENT_TYPES: ReadonlySet<PlayByPlayEventType> = new Set([
@@ -11,64 +10,32 @@ const NOTABLE_EVENT_TYPES: ReadonlySet<PlayByPlayEventType> = new Set([
   'block',
 ]);
 
+export interface RosterStats {
+  loaded: boolean;
+  playerCount: number;
+  teamCount: number;
+  roundNumber: number;
+  lastLoadedAt: Date | null;
+  playerNames: string[];
+}
+
 export class RosterTracker {
   private playerIndex = new Map<string, string[]>();
   private roundNumber = 0;
   private loaded = false;
   private rosterData: FantasyRoster[] = [];
+  private lastLoadedAt: Date | null = null;
 
   static normalizeName(name: string): string {
     return name.trim().toLowerCase();
   }
 
-  loadFromFile(path: string): void {
-    try {
-      const raw = readFileSync(path, 'utf-8');
-      const data: RosterRound = JSON.parse(raw);
-
-      if (!data.rosters || !Array.isArray(data.rosters)) {
-        throw new Error('Invalid rosters.json: missing rosters array');
-      }
-
-      this.rosterData = data.rosters;
-      this.buildIndex(data.rosters, data.roundNumber ?? 0);
-    } catch {
-      this.loaded = false;
-    }
-  }
-
-  /** Load rosters from file and merge with any already-loaded rosters (e.g. from API). */
-  loadFromFileAndMerge(path: string): void {
-    try {
-      const raw = readFileSync(path, 'utf-8');
-      const data: RosterRound = JSON.parse(raw);
-
-      if (!data.rosters || !Array.isArray(data.rosters)) return;
-
-      if (this.loaded) {
-        this.mergeRosters(data.rosters);
-      } else {
-        this.rosterData = data.rosters;
-        this.buildIndex(data.rosters, data.roundNumber ?? 0);
-      }
-    } catch {
-      // File doesn't exist or is invalid — silently skip
-    }
-  }
-
   loadRosters(rosters: FantasyRoster[], matchdayNumber?: number): void {
     this.rosterData = rosters;
     this.buildIndex(rosters, matchdayNumber ?? 0);
-  }
-
-  /** Merge additional rosters (e.g. from file) without duplicating owners already loaded. */
-  mergeRosters(extra: FantasyRoster[]): void {
-    const existingOwners = new Set(this.rosterData.map((r) => r.ownerName.toLowerCase()));
-    const newRosters = extra.filter((r) => !existingOwners.has(r.ownerName.toLowerCase()));
-    if (newRosters.length === 0) return;
-
-    this.rosterData = [...this.rosterData, ...newRosters];
-    this.buildIndex(this.rosterData, this.roundNumber);
+    if (rosters.length > 0) {
+      this.lastLoadedAt = new Date();
+    }
   }
 
   matchEvent(event: PlayByPlayEvent): string[] {
@@ -132,6 +99,32 @@ export class RosterTracker {
 
   isLoaded(): boolean {
     return this.loaded;
+  }
+
+  /** Returns true if rosters have never been loaded or are stale (> 1 hour old). */
+  needsReload(): boolean {
+    if (!this.loaded) return true;
+    if (!this.lastLoadedAt) return true;
+    const staleMs = 60 * 60 * 1000; // 1 hour
+    return Date.now() - this.lastLoadedAt.getTime() > staleMs;
+  }
+
+  getStats(): RosterStats {
+    const uniqueTeams = new Set<string>();
+    for (const roster of this.rosterData) {
+      for (const player of roster.players) {
+        uniqueTeams.add(player.teamCode);
+      }
+    }
+
+    return {
+      loaded: this.loaded,
+      playerCount: this.playerIndex.size,
+      teamCount: uniqueTeams.size,
+      roundNumber: this.roundNumber,
+      lastLoadedAt: this.lastLoadedAt,
+      playerNames: [...this.playerIndex.keys()],
+    };
   }
 
   private formatPlayerLine(p: RosteredPlayer): string {

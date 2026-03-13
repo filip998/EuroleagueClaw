@@ -5,10 +5,12 @@ import type { TriviaService } from './trivia-service.js';
 import type { RosterTracker } from './roster-tracker.js';
 import type { MessageComposer } from './message-composer.js';
 import type { StatsPort } from '../ports/stats.port.js';
+import type { FantasyPort } from '../ports/fantasy.port.js';
 import type { TvSchedulePort, TvScheduleEntry } from '../ports/tv-schedule.port.js';
 import type { NewsPort } from '../ports/news.port.js';
 import type { Logger } from '../shared/logger.js';
 import type { ThrottleManager } from './throttle-manager.js';
+import { escapeMarkdownV2 } from '../shared/markdown-v2.js';
 
 interface CommandRouterDeps {
   gameTracker: GameTracker;
@@ -22,13 +24,15 @@ interface CommandRouterDeps {
   fantasyTracker?: FantasyTracker;
   triviaService?: TriviaService;
   rosterTracker?: RosterTracker;
+  fantasyPort?: FantasyPort;
+  fantasyTeamIds?: string[];
   tvSchedule?: TvSchedulePort;
   news?: NewsPort;
 }
 
 type CommandFn = (cmd: IncomingCommand) => Promise<string>;
 
-const MARKDOWN_COMMANDS = new Set(['help', 'start', 'games', 'roster', 'rotowire']);
+const MARKDOWN_COMMANDS = new Set(['help', 'start', 'games', 'roster', 'rostercheck', 'rotowire']);
 
 export class CommandRouter {
   private readonly commands = new Map<string, CommandFn>();
@@ -188,10 +192,34 @@ export class CommandRouter {
     });
 
     this.commands.set('roster', async () => {
-      if (!this.deps.rosterTracker || !this.deps.rosterTracker.isLoaded()) {
+      if (!this.deps.rosterTracker) {
+        return '📋 No fantasy rosters loaded.';
+      }
+
+      // Fetch live roster data from the Dunkest API if configured
+      if (this.deps.fantasyPort && this.deps.fantasyTeamIds && this.deps.fantasyTeamIds.length > 0) {
+        try {
+          const result = await this.deps.fantasyPort.getRosters(this.deps.fantasyTeamIds);
+          if (result.rosters.length > 0) {
+            this.deps.rosterTracker.loadRosters(result.rosters, result.matchdayNumber);
+          }
+        } catch (err) {
+          this.deps.logger.warn({ error: String(err) }, 'Live roster fetch failed, using cached data');
+        }
+      }
+
+      if (!this.deps.rosterTracker.isLoaded()) {
         return '📋 No fantasy rosters loaded.';
       }
       return this.deps.rosterTracker.getOverview();
+    });
+
+    this.commands.set('rostercheck', async () => {
+      if (!this.deps.rosterTracker) {
+        return escapeMarkdownV2('📋 Roster tracking is not configured.');
+      }
+
+      return this.deps.messageComposer.composeRosterStatus(this.deps.rosterTracker.getStats());
     });
 
     this.commands.set('rotowire', async (cmd) => {
