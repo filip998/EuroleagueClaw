@@ -250,6 +250,52 @@ export class CommandRouter {
       return this.deps.messageComposer.composeRosterStatus(this.deps.rosterTracker.getStats());
     });
 
+    this.commands.set('track', async (cmd) => {
+      if (!this.deps.rosterTracker) {
+        return '📋 Roster tracking is not configured.';
+      }
+
+      const query = cmd.args.join(' ').trim();
+      if (!query) return '⚠️ Usage: /track <player name>\n\nExample: /track nwora';
+
+      const result = this.deps.rosterTracker.addCustomPlayer(cmd.chatId, query);
+
+      if ('matched' in result) {
+        return `✅ Now tracking ${result.matched} — ⭐ Tracked`;
+      }
+      if ('suggestions' in result) {
+        const list = result.suggestions.map(s => `  · ${s}`).join('\n');
+        return `🔍 Did you mean?\n\n${list}\n\nTry again with a more specific name.`;
+      }
+      return '❌ Player not found. Make sure a game with this player is being tracked first.';
+    });
+
+    this.commands.set('untrack', async (cmd) => {
+      if (!this.deps.rosterTracker) {
+        return '📋 Roster tracking is not configured.';
+      }
+
+      const query = cmd.args.join(' ').trim();
+      if (!query) return '⚠️ Usage: /untrack <player name>';
+
+      const removed = this.deps.rosterTracker.removeCustomPlayer(cmd.chatId, query);
+      return removed
+        ? `🛑 Stopped tracking ${removed}.`
+        : `⚠️ No custom-tracked player matching "${query}".`;
+    });
+
+    this.commands.set('tracked', async (cmd) => {
+      if (!this.deps.rosterTracker) {
+        return '📋 Roster tracking is not configured.';
+      }
+
+      const players = this.deps.rosterTracker.getCustomPlayers(cmd.chatId);
+      if (players.length === 0) return '📋 No custom-tracked players. Use /track <name> to add one.';
+
+      const list = players.map(p => `  ⭐ ${p}`).join('\n');
+      return `📋 Custom-tracked players:\n\n${list}`;
+    });
+
     this.commands.set('rotowire', async (cmd) => {
       if (!this.deps.news) {
         return '🏗 RotoWire news is not configured.';

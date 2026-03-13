@@ -34,6 +34,13 @@ export class RosterTracker {
   private rosterData: FantasyRoster[] = [];
   private lastLoadedAt: Date | null = null;
 
+  /** Custom-tracked players: normalized name → set of chatIds */
+  private customPlayers = new Map<string, Set<string>>();
+  /** All player names seen from PBP events (normalized → original) */
+  private knownPlayers = new Map<string, string>();
+
+  private static readonly CUSTOM_LABEL = '⭐ Tracked';
+
   static normalizeName(name: string): string {
     return name.trim().toLowerCase();
   }
@@ -46,13 +53,26 @@ export class RosterTracker {
     }
   }
 
-  matchEvent(event: PlayByPlayEvent): string[] {
-    if (!this.loaded) return [];
+  matchEvent(event: PlayByPlayEvent, chatId?: string): string[] {
     if (!NOTABLE_EVENT_TYPES.has(event.eventType)) return [];
     if (!event.playerName) return [];
 
     const key = RosterTracker.normalizeName(event.playerName);
-    return this.playerIndex.get(key) ?? [];
+    const owners: string[] = [];
+
+    // Fantasy roster matches
+    if (this.loaded) {
+      const rosterOwners = this.playerIndex.get(key);
+      if (rosterOwners) owners.push(...rosterOwners);
+    }
+
+    // Custom-tracked player matches
+    const trackers = this.customPlayers.get(key);
+    if (trackers && chatId && trackers.has(chatId)) {
+      owners.push(RosterTracker.CUSTOM_LABEL);
+    }
+
+    return owners;
   }
 
   getOverview(): string {
@@ -135,6 +155,87 @@ export class RosterTracker {
     };
   }
 
+  /** Register a player name from PBP events so it's available for fuzzy matching. */
+  registerKnownPlayer(name: string): void {
+    if (!name) return;
+    const key = RosterTracker.normalizeName(name);
+    if (!this.knownPlayers.has(key)) {
+      this.knownPlayers.set(key, name.trim());
+    }
+  }
+
+  /** Add a custom-tracked player by fuzzy-matching against known PBP names. */
+  addCustomPlayer(chatId: string, query: string): { matched: string } | { suggestions: string[] } | { notFound: true } {
+    const normalizedQuery = RosterTracker.normalizeName(query);
+
+    // Collect all known names (from rosters + PBP events)
+    const allNames = new Map<string, string>();
+    for (const [key] of this.playerIndex) {
+      allNames.set(key, key);
+    }
+    for (const [key, original] of this.knownPlayers) {
+      allNames.set(key, original);
+    }
+
+    // Try exact match first
+    if (allNames.has(normalizedQuery)) {
+      this.addCustomTracking(normalizedQuery, chatId);
+      return { matched: allNames.get(normalizedQuery)! };
+    }
+
+    // Fuzzy: find names containing all query words
+    const queryWords = normalizedQuery.split(/[\s,]+/).filter(Boolean);
+    const matches: string[] = [];
+    for (const [key, original] of allNames) {
+      if (queryWords.every(w => key.includes(w))) {
+        matches.push(original);
+      }
+    }
+
+    if (matches.length === 1) {
+      const key = RosterTracker.normalizeName(matches[0]);
+      this.addCustomTracking(key, chatId);
+      return { matched: matches[0] };
+    }
+
+    if (matches.length > 1) {
+      return { suggestions: matches.slice(0, 5) };
+    }
+
+    return { notFound: true };
+  }
+
+  removeCustomPlayer(chatId: string, query: string): string | null {
+    const normalizedQuery = RosterTracker.normalizeName(query);
+    const queryWords = normalizedQuery.split(/[\s,]+/).filter(Boolean);
+
+    for (const [key, chatIds] of this.customPlayers) {
+      if (!chatIds.has(chatId)) continue;
+      if (queryWords.every(w => key.includes(w))) {
+        chatIds.delete(chatId);
+        if (chatIds.size === 0) this.customPlayers.delete(key);
+        return this.knownPlayers.get(key) ?? key;
+      }
+    }
+    return null;
+  }
+
+  getCustomPlayers(chatId: string): string[] {
+    const result: string[] = [];
+    for (const [key, chatIds] of this.customPlayers) {
+      if (chatIds.has(chatId)) {
+        result.push(this.knownPlayers.get(key) ?? key);
+      }
+    }
+    return result;
+  }
+
+  private addCustomTracking(normalizedName: string, chatId: string): void {
+    const existing = this.customPlayers.get(normalizedName) ?? new Set();
+    existing.add(chatId);
+    this.customPlayers.set(normalizedName, existing);
+  }
+
   private formatPlayerLine(p: RosteredPlayer): string {
     const pos = p.position ? `${this.positionTag(p.position)} ` : '';
     const name = this.formatDisplayName(p.playerName);
@@ -200,6 +301,10 @@ export class RosterTracker {
         const owners = this.playerIndex.get(key) ?? [];
         owners.push(roster.ownerName);
         this.playerIndex.set(key, owners);
+        // Also register roster players as known for fuzzy matching
+        if (!this.knownPlayers.has(key)) {
+          this.knownPlayers.set(key, player.playerName);
+        }
       }
     }
 

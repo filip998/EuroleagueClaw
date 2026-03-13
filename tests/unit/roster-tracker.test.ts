@@ -424,6 +424,92 @@ describe('RosterTracker', () => {
     });
   });
 
+  describe('custom player tracking', () => {
+    it('should track a player by fuzzy name match from known PBP names', () => {
+      tracker.registerKnownPlayer('NWORA, JORDAN');
+      const result = tracker.addCustomPlayer('chat1', 'nwora');
+      expect(result).toEqual({ matched: 'NWORA, JORDAN' });
+    });
+
+    it('should match custom-tracked players in matchEvent', () => {
+      tracker.registerKnownPlayer('NWORA, JORDAN');
+      tracker.addCustomPlayer('chat1', 'nwora');
+      const owners = tracker.matchEvent(
+        makePbpEvent({ playerName: 'NWORA, JORDAN' }),
+        'chat1',
+      );
+      expect(owners).toContain('⭐ Tracked');
+    });
+
+    it('should not match custom player for a different chatId', () => {
+      tracker.registerKnownPlayer('NWORA, JORDAN');
+      tracker.addCustomPlayer('chat1', 'nwora');
+      const owners = tracker.matchEvent(
+        makePbpEvent({ playerName: 'NWORA, JORDAN' }),
+        'chat2',
+      );
+      expect(owners).toEqual([]);
+    });
+
+    it('should return suggestions when multiple matches exist', () => {
+      tracker.registerKnownPlayer('NWORA, JORDAN');
+      tracker.registerKnownPlayer('NWORANDU, KEVIN');
+      const result = tracker.addCustomPlayer('chat1', 'nwor');
+      expect('suggestions' in result).toBe(true);
+      if ('suggestions' in result) {
+        expect(result.suggestions).toHaveLength(2);
+      }
+    });
+
+    it('should return notFound when no match exists', () => {
+      const result = tracker.addCustomPlayer('chat1', 'nonexistent');
+      expect(result).toEqual({ notFound: true });
+    });
+
+    it('should remove a custom-tracked player', () => {
+      tracker.registerKnownPlayer('NWORA, JORDAN');
+      tracker.addCustomPlayer('chat1', 'nwora');
+      const removed = tracker.removeCustomPlayer('chat1', 'nwora');
+      expect(removed).toBe('NWORA, JORDAN');
+
+      const owners = tracker.matchEvent(
+        makePbpEvent({ playerName: 'NWORA, JORDAN' }),
+        'chat1',
+      );
+      expect(owners).toEqual([]);
+    });
+
+    it('should list custom-tracked players for a chat', () => {
+      tracker.registerKnownPlayer('NWORA, JORDAN');
+      tracker.registerKnownPlayer('CAMPAZZO, FACUNDO');
+      tracker.addCustomPlayer('chat1', 'nwora');
+      tracker.addCustomPlayer('chat1', 'campazzo');
+      const players = tracker.getCustomPlayers('chat1');
+      expect(players).toHaveLength(2);
+    });
+
+    it('should also match roster players from loadRosters as known', () => {
+      const data = makeRosterData();
+      tracker.loadRosters(data.rosters, data.roundNumber);
+      // CAMPAZZO is on a roster — should be matchable for custom tracking too
+      const result = tracker.addCustomPlayer('chat1', 'tavares');
+      expect(result).toEqual({ matched: 'TAVARES, WALTER' });
+    });
+
+    it('should preserve custom players when rosters are reloaded', () => {
+      tracker.registerKnownPlayer('NWORA, JORDAN');
+      tracker.addCustomPlayer('chat1', 'nwora');
+
+      // Reload rosters
+      const data = makeRosterData();
+      tracker.loadRosters(data.rosters, data.roundNumber);
+
+      // Custom player should still be tracked
+      const players = tracker.getCustomPlayers('chat1');
+      expect(players).toContain('NWORA, JORDAN');
+    });
+  });
+
   describe('lastLoadedAt', () => {
     it('should be null before any rosters are loaded', () => {
       const stats = tracker.getStats();

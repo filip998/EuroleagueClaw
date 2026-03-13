@@ -137,13 +137,13 @@ export async function createContainer(config: AppConfig): Promise<AppContainer> 
         logger.warn({ chatId, eventCount: events.length }, 'PBP events arrived but rosters not loaded — attempting lazy load');
         const loaded = await tryLazyRosterLoad();
         if (!loaded) {
-          logger.warn({ chatId }, 'Roster matching skipped — no rosters available');
-          return;
+          logger.debug({ chatId }, 'Roster not loaded — checking custom-tracked players only');
         }
       }
 
       for (const event of events) {
-        const owners = rosterTracker.matchEvent(event);
+        rosterTracker.registerKnownPlayer(event.playerName);
+        const owners = rosterTracker.matchEvent(event, chatId);
         if (owners.length > 0) {
           logger.debug({ chatId, player: event.playerName, owners, eventType: event.eventType }, 'PBP roster match found');
           const text = messageComposer.composeRosterMatch(event, owners);
