@@ -220,3 +220,13 @@ Bogdan evaluated hiring a DevOps engineer and **recommended against it**. Instea
 - **Container wiring:** Reused the existing `DunkestAdapter` instance (created for `fantasyTracker`) and passed it + `config.dunkest.fantasyTeamIds` into CommandRouter deps.
 - **Tests updated:** Removed `loadFromFile` test suite (3 tests), updated remaining tests to use `loadRosters()` directly. All 209 unit tests pass, build clean.
 - **Files changed (4):** `src/domain/command-router.ts`, `src/container.ts`, `src/domain/roster-tracker.ts`, `tests/unit/roster-tracker.test.ts`
+
+### PBP Raw Payload Reference Captured (2026-03-13)
+- **Agent:** Nikola (Data / Integrations)
+- **Outcome:** Full raw play-by-play JSON from EuroLeague API saved for schema reference and fixture data.
+- **Game:** Panathinaikos AKTOR Athens vs Zalgiris Kaunas (game_code 305, season_code E2025)
+- **Endpoint:** `https://live.euroleague.net/api/PlaybyPlay?gamecode=305&seasoncode=E2025`
+- **Key finding:** PBP data persists post-game (not live-only). API uses `ForthQuarter` (typo — must be respected in parsing code).
+- **Files available:** `pao-zalgiris-pbp-raw-opus.json` (157 KB minified), `pao-zalgiris-pbp-pretty-opus.json` (237 KB formatted)
+- **Artifact location:** Session workspace `0a0abdd4-0bc4-4c5a-9ff8-d446e3c86601/files/`
+- **Next steps:** When debugging PBP event parsing or field mappings in `GameTracker` and `RosterTracker`, reference these raw samples for schema validation.

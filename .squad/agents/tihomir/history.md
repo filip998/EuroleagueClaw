@@ -48,6 +48,17 @@
 - **Edge case: fresh RosterTracker + API error** — returns "No fantasy rosters loaded" because `isLoaded()` is false and no cached data exists.
 - **Edge case: pre-loaded RosterTracker + API error** — returns the previously-loaded overview (stale but functional).
 - **Test helper pattern**: `buildRouter()` factory with overrides keeps test setup DRY; `makeRosterFetchResult()` factory follows project convention.
+
+### PBP Raw Payload Reference Captured (2026-03-13)
+- **Agent:** Nikola (Data / Integrations)
+- **Outcome:** Full raw play-by-play JSON from EuroLeague API captured for fixture data and integration testing.
+- **Game:** Panathinaikos AKTOR Athens vs Zalgiris Kaunas (game_code 305, season_code E2025)
+- **Endpoint:** `https://live.euroleague.net/api/PlaybyPlay?gamecode=305&seasoncode=E2025`
+- **API availability:** PBP data persists post-game (tested verified — not live-only). Quarter arrays include `ForthQuarter` (API-level typo).
+- **Schema structure:** Top-level metadata (`Live`, `TeamA`, `TeamB`, `CodeTeamA`, `CodeTeamB`, `ActualQuarter`) + quarter arrays + `ExtraTime`.
+- **Artifacts generated:** `pao-zalgiris-pbp-raw-opus.json` (157 KB minified), `pao-zalgiris-pbp-pretty-opus.json` (237 KB formatted)
+- **Location:** Session workspace `0a0abdd4-0bc4-4c5a-9ff8-d446e3c86601/files/`
+- **Test usage:** Use pretty JSON as fixture for integration tests of PBP parsing pipeline. Enables regression testing across full game lifecycle (all quarters + possible overtime).
 - **Pre-existing breakage**: `roster-tracker.test.ts` has 26 failures due to Strahinja's removal of `loadFromFile`, `loadFromFileAndMerge`, `mergeRosters`. Those tests need updating to use `loadRosters()` instead. The `sqlite.adapter.test.ts` 16 failures are a separate pre-existing issue.
 - **Total test count: 228** (17 in command-router, up from 11). All 17 command-router tests pass.
 

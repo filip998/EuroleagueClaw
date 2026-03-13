@@ -8,5 +8,17 @@
       { "name": "Strahinja", "role": "Backend Dev" },
       { "name": "Tihomir", "role": "Tester" }
     ]
+  },
+  {
+    "assignment_id": "euroleague-claw-expansion-002",
+    "universe": "old-serbian-names",
+    "created_at": "2026-03-13T13:29:15Z",
+    "agents": [
+      { "name": "Bogdan", "role": "Lead" },
+      { "name": "Strahinja", "role": "Backend Dev" },
+      { "name": "Nikola", "role": "Data / Integrations" },
+      { "name": "Milan", "role": "DevOps" },
+      { "name": "Tihomir", "role": "Tester" }
+    ]
   }
 ]

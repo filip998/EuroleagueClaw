@@ -13,6 +13,8 @@
 |------|------|-----------|-------|
 | Bogdan | Lead | Architecture, code review, scope decisions | 🏗️ |
 | Strahinja | Backend Dev | TypeScript, APIs, domain logic, adapters | 🔧 |
+| Nikola | Data / Integrations | External APIs, scraping, parsing, caching, upstream schema changes | 📊 |
+| Milan | DevOps | Azure, GitHub Actions, Docker, CI/CD, deployment | ⚙️ |
 | Tihomir | Tester | Vitest, quality, edge cases | 🧪 |
 | Scribe | Session Logger | Memory, decisions, session logs | 📋 |
 | Ralph | Work Monitor | Work queue, backlog, keep-alive | 🔄 |

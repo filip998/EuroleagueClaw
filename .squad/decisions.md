@@ -306,3 +306,32 @@ Filip requested round-level visibility. The old `/games` (tracked games) was red
 1. **No new dependencies** — Native `Intl.DateTimeFormat` for timezone conversion
 2. **Round detection via date ranges** — Avoids hardcoding round IDs; automatically adapts to season schedule
 3. **StatsPort boundary** — Rounds + games logic in adapter; domain only knows composed messages
+
+---
+
+## PBP Raw Payload Capture — PAO vs Zalgiris — Nikola (2026-07-18)
+
+**Status:** COMPLETE
+
+**Decision:** Captured the full raw play-by-play JSON from the EuroLeague live API for the Panathinaikos vs Zalgiris game (E2025, game code 305).
+
+### Context
+
+User requested full PAO–Zalgiris raw play-by-play API payload saved as JSON for reference and integration testing.
+
+### Key Findings
+
+1. **Endpoint:** `https://live.euroleague.net/api/PlaybyPlay?gamecode=305&seasoncode=E2025`
+2. **Response is available post-game.** The API still returns complete PBP data for finished games — no live-only restriction.
+3. **Schema:** Top-level object with metadata fields (`Live`, `TeamA`, `TeamB`, `CodeTeamA`, `CodeTeamB`, `ActualQuarter`) and quarter arrays (`FirstQuarter` through `ForthQuarter` plus `ExtraTime`).
+4. **Note:** The API uses `ForthQuarter` (not `FourthQuarter`) — this is a known upstream typo that must be respected in all parsing code.
+
+### Artifacts
+
+- Minified: `session-state/0a0abdd4.../pao-zalgiris-pbp-raw-opus.json` (157 KB)
+- Pretty: `session-state/0a0abdd4.../pao-zalgiris-pbp-pretty-opus.json` (237 KB)
+
+### Team Relevance
+
+- **Strahinja:** PBP parsing in `GameTracker` and `RosterTracker` should reference these raw samples when debugging field mappings.
+- **Tihomir:** Integration tests can use this payload as fixture data for PBP event parsing.
