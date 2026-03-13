@@ -41,3 +41,20 @@
 - **`message-composer.test.ts`** composeNews section (10 new tests): 🏥 emoji for injuries, 📰 for general, truncation at 100 chars with `...`, no truncation for short text, MarkdownV2 escaping of `()` and `-`, bold title header with 🗞, empty entries returns "No news available", bold player name, injury type in italic metadata, 10-entry display limit.
 - **Key finding**: `extractField` regex uses non-greedy `[\s\S]*?` and stops at first `<\/[a-z]+>` closing tag — nested HTML tags cause content truncation. Tests written to match this actual behavior.
 - **Total test count: 207** (up from 161). All passing. `tsc --noEmit` clean.
+
+### /roster Live Fetch Tests (2025-07-18)
+- **6 new tests** in `tests/unit/command-router.test.ts` under `CommandRouter — /roster live fetch` describe block.
+- **Key design discovery**: The `/roster` handler uses a graceful degradation pattern — API errors are caught and the handler falls through to cached `rosterTracker` data. No hard `❌` error; instead the warn-and-fallback approach keeps the UX smooth.
+- **Edge case: fresh RosterTracker + API error** — returns "No fantasy rosters loaded" because `isLoaded()` is false and no cached data exists.
+- **Edge case: pre-loaded RosterTracker + API error** — returns the previously-loaded overview (stale but functional).
+- **Test helper pattern**: `buildRouter()` factory with overrides keeps test setup DRY; `makeRosterFetchResult()` factory follows project convention.
+- **Pre-existing breakage**: `roster-tracker.test.ts` has 26 failures due to Strahinja's removal of `loadFromFile`, `loadFromFileAndMerge`, `mergeRosters`. Those tests need updating to use `loadRosters()` instead. The `sqlite.adapter.test.ts` 16 failures are a separate pre-existing issue.
+- **Total test count: 228** (17 in command-router, up from 11). All 17 command-router tests pass.
+
+### Roster Robustness Feature Tests (2025-07-18)
+- **Strahinja's changes reviewed**: Removed `loadFromFile`, `loadFromFileAndMerge`, `mergeRosters`. Added `RosterStats` interface, `getStats()` method, `needsReload()` method, `lastLoadedAt` timestamp. `/roster` command now fetches live from Dunkest API with graceful fallback.
+- **`getStats()` tests** (5 tests): Verified zero state when not loaded, correct player/team/round counts after load, normalized player names in output, unique team counting across rosters, zero state after loading empty rosters.
+- **`needsReload()` tests** (5 tests): True when never loaded, false when recently loaded, true when stale (>1 hour via `vi.useFakeTimers`), false at 59-minute boundary, true after loading empty rosters.
+- **`lastLoadedAt` tests** (4 tests): Null before loading, set to valid Date after loading, not set on empty rosters, updates on subsequent loads (verified via fake timers with 5s gap).
+- **`/rostercheck` command**: NOT implemented by Strahinja — tests were requested but no production code exists. Filed in decisions inbox.
+- **Total test count: 239** (42 in roster-tracker, up from 28; 14 new tests added). All 223 non-SQLite tests pass. `tsc --noEmit` clean.

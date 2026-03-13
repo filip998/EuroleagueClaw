@@ -1,10 +1,7 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { writeFileSync, mkdtempSync, unlinkSync, rmSync } from 'node:fs';
-import { join } from 'node:path';
-import { tmpdir } from 'node:os';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { RosterTracker } from '../../src/domain/roster-tracker.js';
 import { MessageComposer } from '../../src/domain/message-composer.js';
-import type { PlayByPlayEvent, RosterRound } from '../../src/domain/types.js';
+import type { PlayByPlayEvent, FantasyRoster } from '../../src/domain/types.js';
 
 function makePbpEvent(overrides: Partial<PlayByPlayEvent> = {}): PlayByPlayEvent {
   return {
@@ -22,7 +19,7 @@ function makePbpEvent(overrides: Partial<PlayByPlayEvent> = {}): PlayByPlayEvent
   };
 }
 
-function makeRosterData(overrides: Partial<RosterRound> = {}): RosterRound {
+function makeRosterData(): { roundNumber: number; rosters: FantasyRoster[] } {
   return {
     roundNumber: 15,
     rosters: [
@@ -40,54 +37,20 @@ function makeRosterData(overrides: Partial<RosterRound> = {}): RosterRound {
         ],
       },
     ],
-    ...overrides,
   };
 }
 
 describe('RosterTracker', () => {
   let tracker: RosterTracker;
-  let tmpDir: string;
 
   beforeEach(() => {
     tracker = new RosterTracker();
-    tmpDir = mkdtempSync(join(tmpdir(), 'roster-test-'));
-  });
-
-  afterEach(() => {
-    rmSync(tmpDir, { recursive: true, force: true });
-  });
-
-  describe('loadFromFile', () => {
-    it('should load valid rosters.json and build player index', () => {
-      const filePath = join(tmpDir, 'rosters.json');
-      writeFileSync(filePath, JSON.stringify(makeRosterData()));
-
-      tracker.loadFromFile(filePath);
-
-      expect(tracker.isLoaded()).toBe(true);
-    });
-
-    it('should handle missing file gracefully (isLoaded = false)', () => {
-      tracker.loadFromFile(join(tmpDir, 'nonexistent.json'));
-
-      expect(tracker.isLoaded()).toBe(false);
-    });
-
-    it('should handle invalid JSON gracefully', () => {
-      const filePath = join(tmpDir, 'bad.json');
-      writeFileSync(filePath, '{ not valid json !!!');
-
-      tracker.loadFromFile(filePath);
-
-      expect(tracker.isLoaded()).toBe(false);
-    });
   });
 
   describe('matchEvent', () => {
     beforeEach(() => {
-      const filePath = join(tmpDir, 'rosters.json');
-      writeFileSync(filePath, JSON.stringify(makeRosterData()));
-      tracker.loadFromFile(filePath);
+      const data = makeRosterData();
+      tracker.loadRosters(data.rosters, data.roundNumber);
     });
 
     it('should return owners for rostered player on notable event (scoring)', () => {
@@ -137,9 +100,7 @@ describe('RosterTracker', () => {
         ownerName: 'Strahinja',
         players: [{ playerName: 'CAMPAZZO, FACUNDO', teamCode: 'MAD' }],
       });
-      const filePath = join(tmpDir, 'multi.json');
-      writeFileSync(filePath, JSON.stringify(data));
-      tracker.loadFromFile(filePath);
+      tracker.loadRosters(data.rosters, data.roundNumber);
 
       const owners = tracker.matchEvent(makePbpEvent());
       expect(owners).toContain('Filip');
@@ -156,9 +117,8 @@ describe('RosterTracker', () => {
 
   describe('getOverview', () => {
     it('should return formatted roster overview', () => {
-      const filePath = join(tmpDir, 'rosters.json');
-      writeFileSync(filePath, JSON.stringify(makeRosterData()));
-      tracker.loadFromFile(filePath);
+      const data = makeRosterData();
+      tracker.loadRosters(data.rosters, data.roundNumber);
 
       const overview = tracker.getOverview();
       expect(overview).toContain('Fantasy Rosters');
@@ -350,6 +310,160 @@ describe('RosterTracker', () => {
         eventType: 'three_pointer_made',
       }));
       expect(owners).toContain('Marko');
+    });
+  });
+
+  describe('getStats', () => {
+    it('should return zeros and loaded=false when not loaded', () => {
+      const stats = tracker.getStats();
+      expect(stats.loaded).toBe(false);
+      expect(stats.playerCount).toBe(0);
+      expect(stats.teamCount).toBe(0);
+      expect(stats.roundNumber).toBe(0);
+      expect(stats.lastLoadedAt).toBeNull();
+      expect(stats.playerNames).toEqual([]);
+    });
+
+    it('should return correct counts after loading rosters', () => {
+      const data = makeRosterData();
+      tracker.loadRosters(data.rosters, data.roundNumber);
+
+      const stats = tracker.getStats();
+      expect(stats.loaded).toBe(true);
+      expect(stats.playerCount).toBe(3); // Campazzo, Tavares, Vezenkov
+      expect(stats.teamCount).toBe(2);   // MAD, OLY
+      expect(stats.roundNumber).toBe(15);
+      expect(stats.playerNames).toHaveLength(3);
+    });
+
+    it('should return normalized player names', () => {
+      tracker.loadRosters([{
+        ownerName: 'Filip',
+        players: [{ playerName: 'CAMPAZZO, FACUNDO', teamCode: 'MAD' }],
+      }], 10);
+
+      const stats = tracker.getStats();
+      expect(stats.playerNames).toContain('campazzo, facundo');
+    });
+
+    it('should count unique teams across all rosters', () => {
+      tracker.loadRosters([
+        {
+          ownerName: 'Filip',
+          players: [
+            { playerName: 'CAMPAZZO, FACUNDO', teamCode: 'MAD' },
+            { playerName: 'LLULL, SERGIO', teamCode: 'MAD' },
+          ],
+        },
+        {
+          ownerName: 'Marko',
+          players: [
+            { playerName: 'VEZENKOV, SASHA', teamCode: 'OLY' },
+            { playerName: 'SLOUKAS, KOSTAS', teamCode: 'OLY' },
+          ],
+        },
+      ], 5);
+
+      const stats = tracker.getStats();
+      // Two teams (MAD, OLY) despite 4 players
+      expect(stats.teamCount).toBe(2);
+      expect(stats.playerCount).toBe(4);
+    });
+
+    it('should return zeros after loading empty rosters', () => {
+      tracker.loadRosters([], 5);
+      const stats = tracker.getStats();
+      expect(stats.loaded).toBe(false);
+      expect(stats.playerCount).toBe(0);
+      expect(stats.teamCount).toBe(0);
+    });
+  });
+
+  describe('needsReload', () => {
+    it('should return true when rosters have never been loaded', () => {
+      expect(tracker.needsReload()).toBe(true);
+    });
+
+    it('should return false when rosters were recently loaded', () => {
+      const data = makeRosterData();
+      tracker.loadRosters(data.rosters, data.roundNumber);
+      expect(tracker.needsReload()).toBe(false);
+    });
+
+    it('should return true when rosters are stale (> 1 hour old)', () => {
+      vi.useFakeTimers();
+      try {
+        const data = makeRosterData();
+        tracker.loadRosters(data.rosters, data.roundNumber);
+        expect(tracker.needsReload()).toBe(false);
+
+        // Advance 61 minutes
+        vi.advanceTimersByTime(61 * 60 * 1000);
+        expect(tracker.needsReload()).toBe(true);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('should return false at exactly 1 hour boundary', () => {
+      vi.useFakeTimers();
+      try {
+        const data = makeRosterData();
+        tracker.loadRosters(data.rosters, data.roundNumber);
+
+        // Advance exactly 59 minutes — still fresh
+        vi.advanceTimersByTime(59 * 60 * 1000);
+        expect(tracker.needsReload()).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('should return true after loading empty rosters', () => {
+      tracker.loadRosters([], 5);
+      expect(tracker.needsReload()).toBe(true);
+    });
+  });
+
+  describe('lastLoadedAt', () => {
+    it('should be null before any rosters are loaded', () => {
+      const stats = tracker.getStats();
+      expect(stats.lastLoadedAt).toBeNull();
+    });
+
+    it('should be set after loadRosters with non-empty data', () => {
+      const before = new Date();
+      const data = makeRosterData();
+      tracker.loadRosters(data.rosters, data.roundNumber);
+      const after = new Date();
+
+      const stats = tracker.getStats();
+      expect(stats.lastLoadedAt).toBeInstanceOf(Date);
+      expect(stats.lastLoadedAt!.getTime()).toBeGreaterThanOrEqual(before.getTime());
+      expect(stats.lastLoadedAt!.getTime()).toBeLessThanOrEqual(after.getTime());
+    });
+
+    it('should not be set when loading empty rosters', () => {
+      tracker.loadRosters([], 5);
+      const stats = tracker.getStats();
+      expect(stats.lastLoadedAt).toBeNull();
+    });
+
+    it('should update on subsequent loadRosters calls', () => {
+      vi.useFakeTimers();
+      try {
+        const data = makeRosterData();
+        tracker.loadRosters(data.rosters, data.roundNumber);
+        const firstLoad = tracker.getStats().lastLoadedAt!.getTime();
+
+        vi.advanceTimersByTime(5000);
+        tracker.loadRosters(data.rosters, 16);
+        const secondLoad = tracker.getStats().lastLoadedAt!.getTime();
+
+        expect(secondLoad).toBeGreaterThan(firstLoad);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });
