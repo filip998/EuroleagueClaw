@@ -146,6 +146,33 @@ export class CommandRouter {
       return `🏀 Tracking all today's games:\n\n${results.join('\n')}\n\nI'll post live updates here!`;
     });
 
+    this.commands.set('stopall', async (cmd) => {
+      const games = await this.deps.gameTracker.getTrackedGames(cmd.chatId);
+      const activeGames = games.filter(g => g.status !== 'finished');
+
+      if (activeGames.length === 0) return '📭 No games currently being tracked.';
+
+      const results: string[] = [];
+      for (const g of activeGames) {
+        const stopped = await this.deps.gameTracker.stopTracking(
+          cmd.chatId,
+          g.gameCode,
+          g.seasonCode,
+        );
+        if (stopped) {
+          results.push(`🛑 ${g.homeTeam} vs ${g.awayTeam} (${g.gameCode})`);
+        }
+      }
+
+      // Also clean up finished games from storage
+      const finishedGames = games.filter(g => g.status === 'finished');
+      for (const g of finishedGames) {
+        await this.deps.gameTracker.stopTracking(cmd.chatId, g.gameCode, g.seasonCode);
+      }
+
+      return `🛑 Stopped tracking all games:\n\n${results.join('\n')}`;
+    });
+
     this.commands.set('games', async () => {
       const schedule = await this.deps.stats.getCurrentRoundGames(
         this.deps.seasonCode,
@@ -173,8 +200,9 @@ export class CommandRouter {
 
     this.commands.set('status', async (cmd) => {
       const games = await this.deps.gameTracker.getTrackedGames(cmd.chatId);
+      const activeGames = games.filter(g => g.status !== 'finished');
       const uptime = Date.now() - this.deps.startTime;
-      return this.deps.messageComposer.composeStatus(games.length, uptime);
+      return this.deps.messageComposer.composeStatus(activeGames.length, uptime);
     });
 
     this.commands.set('fantasy', async () => {

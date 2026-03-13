@@ -193,6 +193,7 @@ export class MessageComposer {
       `▸ ${bold('/game <n>')} ${e('— Track a game')}`,
       `▸ ${bold('/trackall')} ${e("— Track all today's games")}`,
       `▸ ${bold('/stop <n>')} ${e('— Stop tracking')}`,
+      `▸ ${bold('/stopall')} ${e('— Stop tracking all games')}`,
       `▸ ${bold('/games')} ${e('— Round schedule')}`,
       `▸ ${bold('/fantasy')} ${e('— Fantasy overview')}`,
       `▸ ${bold('/roster')} ${e('— Roster overview')}`,
