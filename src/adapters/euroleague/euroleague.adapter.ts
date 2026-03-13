@@ -55,9 +55,6 @@ export class EuroLeagueAdapter implements StatsPort {
   private gamesCache: { data: ELGame[]; fetchedAt: number } | null = null;
   private readonly cacheTtlMs = 5 * 60 * 1000; // 5 minutes
 
-  private boxscoreCache = new Map<string, { data: BoxScore; fetchedAt: number }>();
-  private readonly boxscoreCacheTtlMs = 60 * 1000; // 60 seconds
-
   /** Keep-alive agent for the v2 API (api-live.euroleague.net) */
   private readonly v2Agent: Agent;
   /** Keep-alive agent for the PBP API (live.euroleague.net) */
@@ -216,12 +213,6 @@ export class EuroLeagueAdapter implements StatsPort {
   }
 
   async getBoxScore(gameCode: number, seasonCode: string): Promise<BoxScore | null> {
-    const cacheKey = `${seasonCode}-${gameCode}`;
-    const cached = this.boxscoreCache.get(cacheKey);
-    if (cached && Date.now() - cached.fetchedAt < this.boxscoreCacheTtlMs) {
-      return cached.data;
-    }
-
     const url = `${PBP_API_BASE}/Boxscore?gamecode=${gameCode}&seasoncode=${seasonCode}`;
     this.logger.debug({ url }, 'Fetching Boxscore API');
 
@@ -272,7 +263,6 @@ export class EuroLeagueAdapter implements StatsPort {
         })),
       };
 
-      this.boxscoreCache.set(cacheKey, { data: boxScore, fetchedAt: Date.now() });
       return boxScore;
     } catch (err) {
       if (err instanceof ApiError) throw err;

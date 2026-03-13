@@ -368,10 +368,8 @@ describe('EuroLeagueAdapter - BoxScore', () => {
     });
   });
 
-  describe('getBoxScore - caching', () => {
-    it('should cache boxscore data for 60 seconds', async () => {
-      vi.useFakeTimers();
-
+  describe('getBoxScore - no caching', () => {
+    it('should fetch fresh boxscore data on every call', async () => {
       const rawResponse = {
         Live: true,
         Stats: [
@@ -411,73 +409,8 @@ describe('EuroLeagueAdapter - BoxScore', () => {
       });
       vi.stubGlobal('fetch', fetchMock);
 
-      // First call - should fetch
-      const result1 = await adapter.getBoxScore(1, 'E2025');
-      expect(fetchMock).toHaveBeenCalledTimes(1);
-      expect(result1?.teams[0].players[0].playerName).toBe('CAMPAZZO, FACUNDO');
-
-      // Second call within TTL - should use cache
-      const result2 = await adapter.getBoxScore(1, 'E2025');
-      expect(fetchMock).toHaveBeenCalledTimes(1); // No additional fetch
-      expect(result2?.teams[0].players[0].playerName).toBe('CAMPAZZO, FACUNDO');
-
-      // Advance time past TTL (60 seconds + 1ms)
-      vi.advanceTimersByTime(60001);
-
-      // Third call after TTL - should fetch again
-      const result3 = await adapter.getBoxScore(1, 'E2025');
-      expect(fetchMock).toHaveBeenCalledTimes(2);
-      expect(result3?.teams[0].players[0].playerName).toBe('CAMPAZZO, FACUNDO');
-
-      vi.unstubAllGlobals();
-      vi.useRealTimers();
-    });
-
-    it('should cache boxscore data per game (different games have separate caches)', async () => {
-      const rawResponse1 = {
-        Live: true,
-        Stats: [
-          {
-            Team: 'Real Madrid',
-            Coach: 'Chus Mateo',
-            PlayersStats: [
-              { Player: 'CAMPAZZO, FACUNDO', Team: 'MAD', Dorsal: '7', Minutes: '24:30', Points: 12, TotalRebounds: 4, Assistances: 5, Steals: 2, Turnovers: 1, BlocksFavour: 0, FoulsCommited: 2, FoulsReceived: 3, Valuation: 15, Plusminus: 8, IsStarter: 1, IsPlaying: 1 } as any,
-            ],
-            tmr: {} as any,
-            totr: {},
-          },
-        ],
-      };
-
-      const rawResponse2 = {
-        Live: true,
-        Stats: [
-          {
-            Team: 'Barcelona',
-            Coach: 'Roger Grimau',
-            PlayersStats: [
-              { Player: 'LAPROVITTOLA, NICOLAS', Team: 'BAR', Dorsal: '10', Minutes: '22:00', Points: 8, TotalRebounds: 2, Assistances: 6, Steals: 1, Turnovers: 0, BlocksFavour: 0, FoulsCommited: 1, FoulsReceived: 2, Valuation: 10, Plusminus: 5, IsStarter: 1, IsPlaying: 1 } as any,
-            ],
-            tmr: {} as any,
-            totr: {},
-          },
-        ],
-      };
-
-      const fetchMock = vi.fn()
-        .mockResolvedValueOnce({ ok: true, json: async () => rawResponse1 })
-        .mockResolvedValueOnce({ ok: true, json: async () => rawResponse2 });
-      vi.stubGlobal('fetch', fetchMock);
-
-      // Fetch game 1
-      const result1 = await adapter.getBoxScore(1, 'E2025');
-      expect(result1?.teams[0].players[0].playerName).toBe('CAMPAZZO, FACUNDO');
-
-      // Fetch game 2
-      const result2 = await adapter.getBoxScore(2, 'E2025');
-      expect(result2?.teams[0].players[0].playerName).toBe('LAPROVITTOLA, NICOLAS');
-
-      // Both calls should have hit the API
+      await adapter.getBoxScore(1, 'E2025');
+      await adapter.getBoxScore(1, 'E2025');
       expect(fetchMock).toHaveBeenCalledTimes(2);
 
       vi.unstubAllGlobals();
