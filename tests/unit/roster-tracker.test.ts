@@ -80,8 +80,7 @@ describe('RosterTracker', () => {
 
     it('should return empty array for non-notable event types', () => {
       const nonNotable: Array<PlayByPlayEvent['eventType']> = [
-        'foul', 'substitution', 'two_pointer_missed', 'three_pointer_missed',
-        'free_throw_missed', 'rebound', 'turnover', 'timeout',
+        'substitution', 'timeout',
       ];
       for (const eventType of nonNotable) {
         const owners = tracker.matchEvent(makePbpEvent({ eventType }));

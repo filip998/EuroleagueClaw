@@ -256,12 +256,22 @@ export class MessageComposer {
       case 'three_pointer_made':
       case 'free_throw_made':
         return '🏀';
+      case 'two_pointer_missed':
+      case 'three_pointer_missed':
+      case 'free_throw_missed':
+        return '❌';
       case 'assist':
         return '🎯';
       case 'steal':
         return '🔥';
       case 'block':
         return '🛡️';
+      case 'rebound':
+        return '📏';
+      case 'turnover':
+        return '💔';
+      case 'foul':
+        return '⚠️';
       default:
         return '📊';
     }

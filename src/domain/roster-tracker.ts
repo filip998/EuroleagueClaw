@@ -3,11 +3,17 @@ import { escapeMarkdownV2, bold, italic, SEPARATOR } from '../shared/markdown-v2
 
 const NOTABLE_EVENT_TYPES: ReadonlySet<PlayByPlayEventType> = new Set([
   'two_pointer_made',
+  'two_pointer_missed',
   'three_pointer_made',
+  'three_pointer_missed',
   'free_throw_made',
+  'free_throw_missed',
+  'rebound',
   'assist',
   'steal',
   'block',
+  'turnover',
+  'foul',
 ]);
 
 export interface RosterStats {

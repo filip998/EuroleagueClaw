@@ -1,0 +1,10 @@
+Scribe: Merge Milan's Azure deployment decision
+
+- Added orchestration log: 2026-03-13T15-00-41Z-milan.md
+- Added session log: 2026-03-13T15-00-41Z-azure-deployment-analysis.md
+- Merged decisions/inbox/milan-azure-deployment.md → decisions.md
+- Updated Bogdan and Strahinja team histories with Azure deployment context
+
+Azure Container Apps (Consumption) recommended: ~\/mo, SQLite persistence via Azure Files, CI/CD workflow ready.
+
+Co-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>
